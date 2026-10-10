@@ -10,7 +10,7 @@ python server.py --library ..\native-tts\work\build-cuda\qwen3_tts_bridge.dll ^
 | 接口 | 说明 |
 |---|---|
 | `GET /health` | `{"ready": true, "busy": false, ...}`；`busy` 供 LLM provider 轮流使用 GPU |
-| `POST /stream` | `{"text": "..."}` → chunked `audio/L16;rate=24000`，一边合成一边返回 |
+| `POST /stream` | `{"text": "..."}` → chunked 原始 PCM（s16le、24 kHz、单声道，`audio/pcm`），一边合成一边返回 |
 | `POST /synthesize` | 同上，但返回完整 WAV，方便试听 |
 
 接 xiaozhi 时 TTS 选 `index_stream`，`api_url` 填 `http://host.docker.internal:18766/stream`。

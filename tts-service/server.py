@@ -1,7 +1,7 @@
 """Streaming HTTP TTS service (also works as xiaozhi-esp32-server's index_stream backend).
 
 GET  /health      {"ready": true, "busy": bool, ...}   busy drives the LLM turn-taking
-POST /stream      {"text": "..."} -> chunked audio/L16 24 kHz mono
+POST /stream      {"text": "..."} -> chunked raw PCM, s16le 24 kHz mono (audio/pcm)
 POST /synthesize  {"text": "..."} -> audio/wav
 
 Example:
@@ -84,7 +84,7 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
                     return
                 if not sent:
                     self.send_response(200)
-                    self.send_header('Content-Type', 'audio/L16;rate=24000;channels=1')
+                    self.send_header('Content-Type', 'audio/pcm;rate=24000;channels=1;format=s16le')
                     self.send_header('Transfer-Encoding', 'chunked')
                     self.send_header('Cache-Control', 'no-store')
                     self.end_headers()
