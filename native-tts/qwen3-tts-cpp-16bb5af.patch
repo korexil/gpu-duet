@@ -1,0 +1,751 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0f4de7d..41f2a44 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -205,6 +205,13 @@ if(WIN32)
+ endif()
+ 
+ # Shared library for JNI (Android/JVM)
++option(QWEN3_TTS_BUILD_C_BRIDGE "Build C ABI library without JNI" OFF)
++if(QWEN3_TTS_BUILD_C_BRIDGE)
++    add_library(qwen3_tts_bridge SHARED src/qwen3_tts_c.cpp)
++    target_link_libraries(qwen3_tts_bridge PRIVATE qwen3_tts)
++    target_compile_definitions(qwen3_tts_bridge PRIVATE QWEN3_TTS_EXPORT)
++endif()
++
+ option(QWEN3_TTS_BUILD_SHARED "Build shared library for JNI" OFF)
+ if(QWEN3_TTS_BUILD_SHARED)
+     find_package(JNI REQUIRED)
+diff --git a/src/main.cpp b/src/main.cpp
+index d773ad8..76ba5a5 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -433,6 +433,9 @@ void print_usage(const char * program) {
+     fprintf(stderr, "  --instruct <text>      Voice steering instructions (e.g. \"whispering\")\n");
+     fprintf(stderr, "  -j, --threads <n>      CPU thread count (default: physical cores)\n");
+     fprintf(stderr, "  -h, --help             Show this help\n");
++    fprintf(stderr, "  --full-text-input      Full-sentence ICL prefill (audio may still stream)\n");
++    fprintf(stderr, "  --backend <name>       Explicit cpu/cuda/auto backend for comparison\n");
++    fprintf(stderr, "  --stream-events <file> Record chunk delivery times as JSONL\n");
+     fprintf(stderr, "\n");
+     fprintf(stderr, "Example:\n");
+     fprintf(stderr, "  %s -m ./models -t \"Hello, world!\" -o hello.wav\n", program);
+@@ -441,6 +444,7 @@ void print_usage(const char * program) {
+ }
+ 
+ int main(int argc, char ** argv) {
++    const int64_t process_entry_ms = monotonic_time_ms();
+     std::vector<std::string> args;
+ #ifdef _WIN32
+     args = get_utf8_argv();
+@@ -462,6 +466,7 @@ int main(int argc, char ** argv) {
+     std::string tokenizer_model_path;
+     std::string text;
+     std::string output_file = "output.wav";
++    std::string stream_events_path;
+     std::string reference_audio;
+     std::string reference_text_file;
+     std::string reference_token_ids_file;
+@@ -646,6 +651,27 @@ int main(int argc, char ** argv) {
+             bench_warmup_count = std::stoi(args[i]);
+         } else if (arg == "--stream") {
+             use_streaming = true;
++        } else if (arg == "--full-text-input") {
++            params.full_text_input = true;
++        } else if (arg == "--backend") {
++            if (++i >= (int) args.size() ||
++                (args[i] != "cpu" && args[i] != "cuda" && args[i] != "auto")) {
++                fprintf(stderr, "Error: --backend requires cpu, cuda or auto\n");
++                return 1;
++            }
++            const auto backend = args[i] == "cpu" ? qwen3_tts::backend_preference::cpu :
++                args[i] == "cuda" ? qwen3_tts::backend_preference::cuda :
++                qwen3_tts::backend_preference::auto_select;
++            if (!qwen3_tts::set_backend_preference(backend)) {
++                fprintf(stderr, "Error: cannot set backend preference\n");
++                return 1;
++            }
++        } else if (arg == "--stream-events") {
++            if (++i >= (int) args.size()) {
++                fprintf(stderr, "Error: missing stream events path\n");
++                return 1;
++            }
++            stream_events_path = args[i];
+         } else if (arg == "--stream-chunk-sec") {
+             if (++i >= (int) args.size()) {
+                 fprintf(stderr, "Error: missing stream chunk duration\n");
+@@ -926,6 +952,14 @@ int main(int argc, char ** argv) {
+         }
+     }
+ 
++    std::ofstream stream_events;
++    if (!stream_events_path.empty()) {
++        stream_events.open(stream_events_path, std::ios::out | std::ios::trunc);
++        if (!stream_events) {
++            fprintf(stderr, "Error: cannot write stream events\n");
++            return 1;
++        }
++    }
+     auto run_synthesis_once = [&](int request_index,
+                                   bool quiet,
+                                   int64_t * ttfa_ms_out) -> qwen3_tts::tts_result {
+@@ -936,6 +970,18 @@ int main(int argc, char ** argv) {
+         const int64_t request_start_ms = monotonic_time_ms();
+         qwen3_tts::tts_audio_chunk_callback_t stream_callback =
+             [&, request_start_ms](const qwen3_tts::tts_audio_chunk & chunk) {
++                if (stream_events.is_open()) {
++                    stream_events << "{\"request\":" << request_index
++                                  << ",\"elapsed_ms\":" << monotonic_time_ms() - request_start_ms
++                                  << ",\"process_entry_elapsed_ms\":" << monotonic_time_ms() - process_entry_ms
++                                  << ",\"start_sample\":" << chunk.start_sample
++                                  << ",\"end_sample\":" << chunk.end_sample
++                                  << ",\"samples\":" << chunk.n_samples
++                                  << ",\"sample_rate\":" << chunk.sample_rate
++                                  << ",\"start_frame\":" << chunk.start_frame
++                                  << ",\"end_frame\":" << chunk.end_frame << "}\n";
++                    stream_events.flush();
++                }
+                 if (ttfa_ms_out && *ttfa_ms_out < 0) {
+                     *ttfa_ms_out = monotonic_time_ms() - request_start_ms;
+                 }
+diff --git a/src/pipeline/pipeline_models.cpp b/src/pipeline/pipeline_models.cpp
+index 2b839da..9b88067 100644
+--- a/src/pipeline/pipeline_models.cpp
++++ b/src/pipeline/pipeline_models.cpp
+@@ -304,7 +304,9 @@ bool Qwen3TTS::load_models(const std::string & model_dir,
+     }
+     log_memory_usage("load/after-transformer");
+ 
+-    if (!low_mem_mode_) {
++    const char * lazy_batch_env = std::getenv("QWEN3_TTS_LAZY_BATCH_DECODER");
++    const bool lazy_batch_decoder = lazy_batch_env && lazy_batch_env[0] != '\0' && lazy_batch_env[0] != '0';
++    if (!low_mem_mode_ && !lazy_batch_decoder) {
+         fprintf(stderr, "Loading vocoder from %s...\n", tokenizer_model_path.c_str());
+         int64_t t_decoder_start = get_time_ms();
+         if (!audio_decoder_.load_model(tokenizer_model_path)) {
+diff --git a/src/pipeline/pipeline_synthesize.cpp b/src/pipeline/pipeline_synthesize.cpp
+index a73b00a..34aad16 100644
+--- a/src/pipeline/pipeline_synthesize.cpp
++++ b/src/pipeline/pipeline_synthesize.cpp
+@@ -1485,7 +1485,7 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
+                                     reference_codes_ptr ? reference_codes_ptr->codes.data() : nullptr,
+                                     reference_codes_ptr ? reference_codes_ptr->n_frames : 0,
+                                     reference_codes_ptr ? reference_codes_ptr->n_codebooks : 0,
+-                                    &frame_callback)) {
++                                    &frame_callback, params.full_text_input)) {
+         result.error_msg = stream_error.empty()
+             ? "Failed to generate speech codes: " + self.transformer_.get_error()
+             : stream_error;
+diff --git a/src/qwen3_tts.h b/src/qwen3_tts.h
+index 4829541..dff1be1 100644
+--- a/src/qwen3_tts.h
++++ b/src/qwen3_tts.h
+@@ -74,6 +74,9 @@ struct tts_params {
+     std::vector<int32_t> reference_token_ids;
+     std::optional<speech_codes> reference_codes;
+ 
++    // Match Qwen's non_streaming_mode text prefill while audio remains streamed.
++    bool full_text_input = false;
++
+     // Optional debug dumps for generated and decoder-input speech codes.
+     std::string dump_generated_codes_path;
+     std::string dump_decoder_codes_path;
+diff --git a/src/qwen3_tts_c.cpp b/src/qwen3_tts_c.cpp
+index e720f52..7cc2491 100644
+--- a/src/qwen3_tts_c.cpp
++++ b/src/qwen3_tts_c.cpp
+@@ -47,6 +47,8 @@ static qwen3_tts::tts_params convert_params(qwen3_tts_params_t params) {
+     p.print_timing = params.print_timing != 0;
+     p.repetition_penalty = params.repetition_penalty;
+     p.language_id = params.language_id;
++    p.seed = params.seed;
++    p.full_text_input = params.full_text_input != 0;
+     if (params.vocoder_left_context_sec > 0.0f) {
+         p.vocoder_left_context_sec = params.vocoder_left_context_sec;
+     }
+@@ -59,6 +61,14 @@ static qwen3_tts::tts_params convert_params(qwen3_tts_params_t params) {
+     return p;
+ }
+ 
++void qwen3_tts_bridge_abi_sizes(int32_t* sizes) {
++    if (!sizes) return;
++    sizes[0] = sizeof(qwen3_tts_params_t);
++    sizes[1] = sizeof(qwen3_tts_streaming_params_t);
++    sizes[2] = sizeof(qwen3_tts_audio_chunk_t);
++    sizes[3] = sizeof(qwen3_tts_result_t);
++}
++
+ static qwen3_tts::tts_streaming_params convert_streaming_params(qwen3_tts_streaming_params_t params) {
+     qwen3_tts::tts_streaming_params p;
+     p.generation = convert_params(params.generation);
+diff --git a/src/qwen3_tts_c.h b/src/qwen3_tts_c.h
+index 2300182..c154d3e 100644
+--- a/src/qwen3_tts_c.h
++++ b/src/qwen3_tts_c.h
+@@ -35,6 +35,9 @@ typedef struct {
+     const char* speaker;
+     // Values <= 0 keep the native default.
+     float vocoder_left_context_sec;
++    // Local bridge ABI extension: rebuild bindings together with this library.
++    int64_t seed;
++    int32_t full_text_input;
+ } qwen3_tts_params_t;
+ 
+ typedef struct {
+@@ -105,6 +108,7 @@ typedef int32_t (*qwen3_tts_audio_chunk_callback)(
+ );
+ 
+ QWEN3_TTS_API qwen3_tts_context_t* qwen3_tts_init();
++QWEN3_TTS_API void qwen3_tts_bridge_abi_sizes(int32_t* sizes);
+ QWEN3_TTS_API void qwen3_tts_free(qwen3_tts_context_t* ctx);
+ QWEN3_TTS_API int32_t qwen3_tts_set_backend_preference(int32_t preference);
+ QWEN3_TTS_API int32_t qwen3_tts_set_cpu_threads(int32_t n_threads);
+diff --git a/src/transformer/readonly_tensor_mapping.h b/src/transformer/readonly_tensor_mapping.h
+new file mode 100644
+index 0000000..c58fa19
+--- /dev/null
++++ b/src/transformer/readonly_tensor_mapping.h
+@@ -0,0 +1,127 @@
++#pragma once
++
++#include <cstdint>
++#include <limits>
++#include <memory>
++#include <string>
++
++#ifdef _WIN32
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#include <windows.h>
++#else
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#endif
++
++namespace qwen3_tts {
++
++// Owns a read-only tensor view. GGML's from_ptr buffer owns only metadata;
++// free that buffer before destroying this mapping. No heap copy or prefault.
++class ReadonlyTensorMapping {
++public:
++    ReadonlyTensorMapping(const ReadonlyTensorMapping &) = delete;
++    ReadonlyTensorMapping & operator=(const ReadonlyTensorMapping &) = delete;
++
++    ~ReadonlyTensorMapping() {
++#ifdef _WIN32
++        if (view_) UnmapViewOfFile(view_);
++        if (mapping_) CloseHandle(mapping_);
++        if (file_ != INVALID_HANDLE_VALUE) CloseHandle(file_);
++#else
++        if (view_) munmap(view_, view_bytes_);
++        if (file_ >= 0) close(file_);
++#endif
++    }
++
++    void * data() const { return static_cast<char *>(view_) + delta_; }
++    size_t size() const { return tensor_bytes_; }
++
++    static std::unique_ptr<ReadonlyTensorMapping> open(
++            const std::string & path, uint64_t offset, size_t bytes, std::string & error) {
++        auto result = std::unique_ptr<ReadonlyTensorMapping>(new ReadonlyTensorMapping());
++        if (!bytes) { error = "Cannot map an empty tensor"; return nullptr; }
++        uint64_t file_bytes = 0, granularity = 0;
++#ifdef _WIN32
++        if (path.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
++            error = "UTF-8 model path too long"; return nullptr;
++        }
++        const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
++                                              path.data(), static_cast<int>(path.size()), nullptr, 0);
++        if (!length) { error = "Invalid UTF-8 model path"; return nullptr; }
++        std::wstring wide(static_cast<size_t>(length), L'\0');
++        if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.data(),
++                              static_cast<int>(path.size()), &wide[0], length) != length) {
++            error = "Failed to convert model path"; return nullptr;
++        }
++        result->file_ = CreateFileW(wide.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
++                                   OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, nullptr);
++        if (result->file_ == INVALID_HANDLE_VALUE) {
++            error = "Cannot open read-only tensor file: " + std::to_string(GetLastError()); return nullptr;
++        }
++        LARGE_INTEGER size;
++        if (!GetFileSizeEx(result->file_, &size) || size.QuadPart < 0) {
++            error = "Cannot determine tensor file size"; return nullptr;
++        }
++        file_bytes = static_cast<uint64_t>(size.QuadPart);
++        SYSTEM_INFO info; GetSystemInfo(&info);
++        granularity = info.dwAllocationGranularity;
++#else
++        result->file_ = ::open(path.c_str(), O_RDONLY);
++        struct stat info;
++        if (result->file_ < 0 || fstat(result->file_, &info) || info.st_size < 0) {
++            error = "Cannot open/stat read-only tensor file"; return nullptr;
++        }
++        file_bytes = static_cast<uint64_t>(info.st_size);
++        const long page_size = sysconf(_SC_PAGESIZE);
++        if (page_size <= 0) { error = "Invalid mmap page size"; return nullptr; }
++        granularity = static_cast<uint64_t>(page_size);
++#endif
++        if (!granularity || offset > file_bytes || bytes > file_bytes - offset) {
++            error = "Tensor mapping exceeds model file bounds"; return nullptr;
++        }
++        const uint64_t base_offset = offset - offset % granularity;
++        const uint64_t delta = offset - base_offset;
++        if (delta > std::numeric_limits<size_t>::max() - bytes) {
++            error = "Tensor mapping size overflow"; return nullptr;
++        }
++        result->delta_ = static_cast<size_t>(delta);
++        result->tensor_bytes_ = bytes;
++        result->view_bytes_ = bytes + result->delta_;
++#ifdef _WIN32
++        result->mapping_ = CreateFileMappingW(result->file_, nullptr, PAGE_READONLY, 0, 0, nullptr);
++        if (!result->mapping_) { error = "CreateFileMapping failed"; return nullptr; }
++        result->view_ = MapViewOfFile(result->mapping_, FILE_MAP_READ,
++            static_cast<DWORD>(base_offset >> 32), static_cast<DWORD>(base_offset), result->view_bytes_);
++        if (!result->view_) { error = "MapViewOfFile failed"; return nullptr; }
++#else
++        if (base_offset > static_cast<uint64_t>(std::numeric_limits<off_t>::max())) {
++            error = "Tensor offset exceeds off_t"; return nullptr;
++        }
++        void * view = mmap(nullptr, result->view_bytes_, PROT_READ, MAP_PRIVATE,
++                          result->file_, static_cast<off_t>(base_offset));
++        if (view == MAP_FAILED) { error = "mmap failed"; return nullptr; }
++        result->view_ = view;
++#endif
++        return result;
++    }
++
++private:
++    ReadonlyTensorMapping() = default;
++    void * view_ = nullptr;
++    size_t view_bytes_ = 0, delta_ = 0, tensor_bytes_ = 0;
++#ifdef _WIN32
++    HANDLE file_ = INVALID_HANDLE_VALUE;
++    HANDLE mapping_ = nullptr;
++#else
++    int file_ = -1;
++#endif
++};
++
++} // namespace qwen3_tts
+diff --git a/src/transformer/transformer_embeddings.cpp b/src/transformer/transformer_embeddings.cpp
+index 7bcb27e..4786abd 100644
+--- a/src/transformer/transformer_embeddings.cpp
++++ b/src/transformer/transformer_embeddings.cpp
+@@ -174,11 +174,23 @@ bool transformer_internal::ops::project_text_tokens(TTSTransformer & self,
+     ggml_set_input(inp_tokens);
+ 
+     struct ggml_tensor * cur = ggml_get_rows(ctx0, impl->model.text_embd, inp_tokens);
+-    cur = ggml_mul_mat(ctx0, impl->model.text_proj_fc1, cur);
+-    cur = ggml_add(ctx0, cur, impl->model.text_proj_fc1_bias);
+-    cur = ggml_silu(ctx0, cur);
+-    cur = ggml_mul_mat(ctx0, impl->model.text_proj_fc2, cur);
+-    cur = ggml_add(ctx0, cur, impl->model.text_proj_fc2_bias);
++    if (impl->model.buffer_cpu && impl->state.backend_cpu) {
++        // QWEN3_TTS_TEXT_EMBD_CPU: pin the lookup to CPU so the scheduler never uploads the whole table;
++        // only the n_tokens x text_embd_dim rows cross to the GPU projection below.
++        ggml_backend_sched_set_tensor_backend(impl->state.sched, cur, impl->state.backend_cpu);
++    }
++    const bool pin_proj_gpu = impl->model.buffer_cpu && impl->state.backend_cpu;
++    auto pin_gpu = [&](struct ggml_tensor * t) {
++        // QWEN3_TTS_TEXT_EMBD_CPU: keep the projection on the original device backend.
++        // Without this the scheduler may propagate the CPU assignment of get_rows down the chain.
++        if (pin_proj_gpu) ggml_backend_sched_set_tensor_backend(impl->state.sched, t, impl->state.backend);
++        return t;
++    };
++    cur = pin_gpu(ggml_mul_mat(ctx0, impl->model.text_proj_fc1, cur));
++    cur = pin_gpu(ggml_add(ctx0, cur, impl->model.text_proj_fc1_bias));
++    cur = pin_gpu(ggml_silu(ctx0, cur));
++    cur = pin_gpu(ggml_mul_mat(ctx0, impl->model.text_proj_fc2, cur));
++    cur = pin_gpu(ggml_add(ctx0, cur, impl->model.text_proj_fc2_bias));
+ 
+     ggml_set_name(cur, "text_proj_out");
+     ggml_set_output(cur);
+@@ -228,7 +240,8 @@ bool transformer_internal::ops::build_prefill_graph(TTSTransformer & self,
+                                                     int32_t n_reference_tokens,
+                                                     const int32_t * reference_codes,
+                                                     int32_t n_reference_frames,
+-                                                    int32_t n_reference_codebooks) {
++                                                    int32_t n_reference_codebooks,
++                                                    bool full_text_input) {
+     auto & impl = self.impl_;
+     auto & error_msg = self.error_msg_;
+ 
+@@ -243,6 +256,10 @@ bool transformer_internal::ops::build_prefill_graph(TTSTransformer & self,
+ 
+     const bool has_reference = reference_tokens || reference_codes ||
+                                n_reference_tokens > 0 || n_reference_frames > 0;
++    if (full_text_input && !has_reference) {
++        error_msg = "full_text_input requires an ICL reference prompt";
++        return false;
++    }
+     fprintf(stderr, "  build_prefill_graph: n_tokens=%d, n_instruct=%d, has_speaker=%s, has_reference=%s\n",
+             n_tokens, n_instruct_tokens, speaker_embd ? "yes" : "no",
+             has_reference ? "yes" : "no");
+@@ -556,22 +573,38 @@ bool transformer_internal::ops::build_prefill_graph(TTSTransformer & self,
+ #ifdef QWEN3_TTS_TIMING
+         t_part = now();
+ #endif
+-        for (int32_t row = 0; row < ref_codec_rows; ++row) {
+-            const float * text_row = row < text_rows
+-                ? text_embed.data() + (size_t) row * hidden_size
+-                : tts_pad_embed.data();
+-            append_added_row(prompt,
+-                             text_row,
+-                             ref_codec.data() + (size_t) row * hidden_size);
+-        }
+-
+-        if (text_rows > ref_codec_rows) {
+-            const int32_t trailing_rows = text_rows - ref_codec_rows;
+-            trailing_text_hidden.assign(
+-                text_embed.begin() + (size_t) ref_codec_rows * hidden_size,
+-                text_embed.begin() + (size_t) (ref_codec_rows + trailing_rows) * hidden_size);
+-        } else {
++        if (full_text_input) {
++            // Qwen generate_icl_prompt(non_streaming_mode=True): all text+EOS
++            // with codec_pad, then codec BOS+reference with tts_pad.
++            const float * codec_pad = codec_input_embedding.data() +
++                (size_t) (codec_input_len - 2) * hidden_size;
++            for (int32_t row = 0; row < text_rows; ++row) {
++                append_added_row(prompt, text_embed.data() + (size_t) row * hidden_size,
++                                 codec_pad);
++            }
++            for (int32_t row = 0; row < ref_codec_rows; ++row) {
++                append_added_row(prompt, ref_codec.data() + (size_t) row * hidden_size,
++                                 tts_pad_embed.data());
++            }
+             trailing_text_hidden = tts_pad_embed;
++        } else {
++            for (int32_t row = 0; row < ref_codec_rows; ++row) {
++                const float * text_row = row < text_rows
++                    ? text_embed.data() + (size_t) row * hidden_size
++                    : tts_pad_embed.data();
++                append_added_row(prompt,
++                                 text_row,
++                                 ref_codec.data() + (size_t) row * hidden_size);
++            }
++
++            if (text_rows > ref_codec_rows) {
++                const int32_t trailing_rows = text_rows - ref_codec_rows;
++                trailing_text_hidden.assign(
++                    text_embed.begin() + (size_t) ref_codec_rows * hidden_size,
++                    text_embed.begin() + (size_t) (ref_codec_rows + trailing_rows) * hidden_size);
++            } else {
++                trailing_text_hidden = tts_pad_embed;
++            }
+         }
+ 
+         prefill_embd = std::move(prompt);
+diff --git a/src/transformer/transformer_generate.cpp b/src/transformer/transformer_generate.cpp
+index 8337dee..59e7dda 100644
+--- a/src/transformer/transformer_generate.cpp
++++ b/src/transformer/transformer_generate.cpp
+@@ -56,7 +56,8 @@ bool TTSTransformer::generate(const int32_t * text_tokens, int32_t n_tokens,
+                               const int32_t * reference_codes,
+                               int32_t n_reference_frames,
+                               int32_t n_reference_codebooks,
+-                              const tts_code_frame_callback_t * frame_callback) {
++                              const tts_code_frame_callback_t * frame_callback,
++                              bool full_text_input) {
+ #ifdef QWEN3_TTS_TIMING
+     using clk = std::chrono::high_resolution_clock;
+     tts_timing timing = {};
+@@ -105,7 +106,7 @@ bool TTSTransformer::generate(const int32_t * text_tokens, int32_t n_tokens,
+                              instruct_tokens, n_instruct_tokens,
+                              reference_tokens, n_reference_tokens,
+                              reference_codes, n_reference_frames,
+-                             n_reference_codebooks)) {
++                             n_reference_codebooks, full_text_input)) {
+         return false;
+     }
+ #ifdef QWEN3_TTS_TIMING
+diff --git a/src/transformer/transformer_internal.h b/src/transformer/transformer_internal.h
+index c29fdff..4ecdc7e 100644
+--- a/src/transformer/transformer_internal.h
++++ b/src/transformer/transformer_internal.h
+@@ -47,7 +47,8 @@ struct ops {
+                                     int32_t n_reference_tokens = 0,
+                                     const int32_t * reference_codes = nullptr,
+                                     int32_t n_reference_frames = 0,
+-                                    int32_t n_reference_codebooks = 0);
++                                    int32_t n_reference_codebooks = 0,
++                                    bool full_text_input = false);
+ 
+     static struct ggml_cgraph * build_prefill_forward_graph(TTSTransformer & self, int32_t n_tokens, int32_t n_past);
+     static struct ggml_cgraph * build_step_graph(TTSTransformer & self, int32_t n_past,
+diff --git a/src/transformer/transformer_loader_tensors.cpp b/src/transformer/transformer_loader_tensors.cpp
+index e5c21ad..d239526 100644
+--- a/src/transformer/transformer_loader_tensors.cpp
++++ b/src/transformer/transformer_loader_tensors.cpp
+@@ -2,11 +2,21 @@
+ #include "transformer/transformer_state_internal.h"
+ #include "gguf_loader.h"
+ #include "transformer/transformer_internal.h"
++#include "ggml-alloc.h"
++#include "ggml-backend.h"
+ 
+ #include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <vector>
+ 
++namespace {
++bool env_flag_on(const char * key) {
++    const char * v = std::getenv(key);
++    return v && v[0] == '1' && v[1] == '\0';
++}
++}  // namespace
++
+ namespace qwen3_tts {
+ 
+ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct gguf_context * ctx) {
+@@ -38,6 +48,22 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+         return false;
+     }
+ 
++    const bool text_embd_cpu = env_flag_on("QWEN3_TTS_TEXT_EMBD_CPU");
++    const bool qkv_dedup = env_flag_on("QWEN3_TTS_QKV_DEDUP") &&
++        (packed_talker_layers > 0 || packed_code_pred_layers > 0);
++    if (text_embd_cpu) {
++        struct ggml_init_params p_cpu = { ggml_tensor_overhead() * 2, nullptr, true };
++        impl->model.ctx_cpu = ggml_init(p_cpu);
++        if (!impl->model.ctx_cpu) { error_msg = "Failed to create CPU text_embd context"; return false; }
++    }
++    if (qkv_dedup) {
++        struct ggml_init_params p_meta = {
++            ggml_tensor_overhead() * (size_t) (3 * (cfg.n_layers + cfg.code_pred_layers) + 4), nullptr, true };
++        impl->model.ctx_meta = ggml_init(p_meta);
++        if (!impl->model.ctx_meta) { error_msg = "Failed to create Q/K/V meta context"; return false; }
++    }
++    fprintf(stderr, "  XW text_embd_cpu=%d qkv_dedup=%d\n", text_embd_cpu ? 1 : 0, qkv_dedup ? 1 : 0);
++
+     impl->model.layers.resize(cfg.n_layers);
+     impl->model.code_pred_layers.resize(cfg.code_pred_layers);
+     impl->model.code_pred_embd.resize(cfg.n_codebooks - 1);
+@@ -226,7 +252,17 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+             continue;
+         }
+ 
+-        struct ggml_tensor * tensor = ggml_new_tensor(impl->model.ctx, type, n_dims, ne);
++        struct ggml_context * target_ctx = impl->model.ctx;
++        if (impl->model.ctx_cpu && strstr(name, "talker.text_embd.weight")) {
++            target_ctx = impl->model.ctx_cpu;
++        } else if (impl->model.ctx_meta &&
++                   (strstr(name, "attn_q.weight") || strstr(name, "attn_k.weight") ||
++                    strstr(name, "attn_v.weight")) &&
++                   ((packed_talker_layers > 0 && strstr(name, "talker.blk.")) ||
++                    (packed_code_pred_layers > 0 && strstr(name, "code_pred.blk.")))) {
++            target_ctx = impl->model.ctx_meta;
++        }
++        struct ggml_tensor * tensor = ggml_new_tensor(target_ctx, type, n_dims, ne);
+         if (!tensor) {
+             error_msg = "Failed to create tensor: " + std::string(name);
+             return false;
+@@ -334,6 +370,24 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+             }
+             ggml_format_name(layer.attn_qkv,
+                              "code_pred.blk.%d.attn_qkv.packed", il);
++            if (impl->model.ctx_meta) {
++                struct ggml_tensor * q = layer.attn_q;
++                struct ggml_tensor * k = layer.attn_k;
++                struct ggml_tensor * v = layer.attn_v;
++                const size_t nb1 = layer.attn_qkv->nb[1];
++                layer.attn_q = ggml_view_2d(impl->model.ctx, layer.attn_qkv, q->ne[0], q->ne[1], nb1, 0);
++                layer.attn_k = ggml_view_2d(impl->model.ctx, layer.attn_qkv, k->ne[0], k->ne[1], nb1,
++                                            (size_t) q->ne[1] * nb1);
++                layer.attn_v = ggml_view_2d(impl->model.ctx, layer.attn_qkv, v->ne[0], v->ne[1], nb1,
++                                            (size_t) (q->ne[1] + k->ne[1]) * nb1);
++                if (!layer.attn_q || !layer.attn_k || !layer.attn_v) {
++                    error_msg = "Failed to create Q/K/V views for layer " + std::to_string(il);
++                    return false;
++                }
++                ggml_format_name(layer.attn_q, "%s.view", ggml_get_name(q));
++                ggml_format_name(layer.attn_k, "%s.view", ggml_get_name(k));
++                ggml_format_name(layer.attn_v, "%s.view", ggml_get_name(v));
++            }
+         }
+     }
+ 
+@@ -365,6 +419,24 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+                 return false;
+             }
+             ggml_format_name(layer.attn_qkv, "talker.blk.%d.attn_qkv.packed", il);
++            if (impl->model.ctx_meta) {
++                struct ggml_tensor * q = layer.attn_q;
++                struct ggml_tensor * k = layer.attn_k;
++                struct ggml_tensor * v = layer.attn_v;
++                const size_t nb1 = layer.attn_qkv->nb[1];
++                layer.attn_q = ggml_view_2d(impl->model.ctx, layer.attn_qkv, q->ne[0], q->ne[1], nb1, 0);
++                layer.attn_k = ggml_view_2d(impl->model.ctx, layer.attn_qkv, k->ne[0], k->ne[1], nb1,
++                                            (size_t) q->ne[1] * nb1);
++                layer.attn_v = ggml_view_2d(impl->model.ctx, layer.attn_qkv, v->ne[0], v->ne[1], nb1,
++                                            (size_t) (q->ne[1] + k->ne[1]) * nb1);
++                if (!layer.attn_q || !layer.attn_k || !layer.attn_v) {
++                    error_msg = "Failed to create Q/K/V views for layer " + std::to_string(il);
++                    return false;
++                }
++                ggml_format_name(layer.attn_q, "%s.view", ggml_get_name(q));
++                ggml_format_name(layer.attn_k, "%s.view", ggml_get_name(k));
++                ggml_format_name(layer.attn_v, "%s.view", ggml_get_name(v));
++            }
+         }
+     }
+ 
+@@ -385,6 +457,63 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
+         release_preferred_backend(backend);
+         return false;
+     }
++    if (impl->model.ctx_cpu) {
++        if (env_flag_on("QWEN3_TTS_TEXT_EMBD_MMAP")) {
++#ifdef _WIN32
++            // The legacy loader still uses ANSI fopen for the other tensors.
++            // Fail explicitly rather than open different files under two encodings.
++            for (unsigned char c : path) {
++                if (c >= 128) {
++                    error_msg = "Mapped loader requires an ASCII model path until legacy fopen supports UTF-8";
++                    release_preferred_backend(backend); return false;
++                }
++            }
++#endif
++            const int64_t index = gguf_find_tensor(ctx, "talker.text_embd.weight");
++            struct ggml_tensor * tensor = impl->model.text_embd;
++            if (index < 0 || !tensor || ggml_get_first_tensor(impl->model.ctx_cpu) != tensor ||
++                    ggml_get_next_tensor(impl->model.ctx_cpu, tensor) != nullptr) {
++                error_msg = "Mapped CPU context must contain exactly the text embedding tensor";
++                release_preferred_backend(backend); return false;
++            }
++            const uint64_t data_offset = gguf_get_data_offset(ctx);
++            const uint64_t tensor_offset = gguf_get_tensor_offset(ctx, index);
++            if (tensor_offset > UINT64_MAX - data_offset) {
++                error_msg = "Text embedding offset overflow";
++                release_preferred_backend(backend); return false;
++            }
++            impl->model.text_embd_mapping = ReadonlyTensorMapping::open(
++                path, data_offset + tensor_offset, ggml_nbytes(tensor), error_msg);
++            if (!impl->model.text_embd_mapping) { release_preferred_backend(backend); return false; }
++            void * data = impl->model.text_embd_mapping->data();
++            const size_t alignment = ggml_backend_buft_get_alignment(ggml_backend_cpu_buffer_type());
++            if (reinterpret_cast<uintptr_t>(data) % alignment != 0) {
++                error_msg = "Mapped text embedding is not GGML aligned";
++                release_preferred_backend(backend); return false;
++            }
++            impl->model.buffer_cpu = ggml_backend_cpu_buffer_from_ptr(data, ggml_nbytes(tensor));
++            if (!impl->model.buffer_cpu ||
++                    ggml_backend_tensor_alloc(impl->model.buffer_cpu, tensor, data) != GGML_STATUS_SUCCESS) {
++                error_msg = "Failed to wrap read-only text embedding";
++                release_preferred_backend(backend); return false;
++            }
++            fprintf(stderr, "  XW read-only mapped text_embd=%zu bytes (no heap copy)\n", ggml_nbytes(tensor));
++        } else {
++            impl->model.buffer_cpu =
++                ggml_backend_alloc_ctx_tensors_from_buft(impl->model.ctx_cpu, ggml_backend_cpu_buffer_type());
++        }
++        if (!impl->model.buffer_cpu) {
++            error_msg = "Failed to allocate CPU text_embd buffer";
++            release_preferred_backend(backend);
++            return false;
++        }
++        fprintf(stderr, "  XW model buffer: device=%zu bytes, host text_embd=%zu bytes\n",
++                ggml_backend_buffer_get_size(impl->model.buffer),
++                ggml_backend_buffer_get_size(impl->model.buffer_cpu));
++    } else {
++        fprintf(stderr, "  XW model buffer: device=%zu bytes\n",
++                ggml_backend_buffer_get_size(impl->model.buffer));
++    }
+ 
+     FILE * f = fopen(path.c_str(), "rb");
+     if (!f) {
+@@ -409,6 +538,12 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
+         struct ggml_tensor * tensor = it->second;
+         size_t nbytes = ggml_nbytes(tensor);
+ 
++        // The mapped input is immutable; reading it into read_buf and calling
++        // tensor_set would both duplicate the table and write to read-only pages.
++        if (impl->model.text_embd_mapping && tensor == impl->model.text_embd) {
++            continue;
++        }
++
+         read_buf.resize(nbytes);
+ 
+ #ifdef _WIN32
+@@ -429,7 +564,9 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
+             return false;
+         }
+ 
+-        ggml_backend_tensor_set(tensor, read_buf.data(), 0, nbytes);
++        if (tensor->buffer) {  // metadata-only Q/K/V (QKV_DEDUP) have no buffer; packed copy below
++            ggml_backend_tensor_set(tensor, read_buf.data(), 0, nbytes);
++        }
+ 
+         int layer_idx = -1;
+         if (sscanf(name, "code_pred.blk.%d.", &layer_idx) == 1 &&
+diff --git a/src/transformer/transformer_state_internal.h b/src/transformer/transformer_state_internal.h
+index 0b398f3..d6bc7e7 100644
+--- a/src/transformer/transformer_state_internal.h
++++ b/src/transformer/transformer_state_internal.h
+@@ -7,6 +7,7 @@
+ #include "coreml_code_predictor.h"
+ 
+ #include <map>
++#include "transformer/readonly_tensor_mapping.h"
+ #include <string>
+ #include <vector>
+ #ifdef QWEN3_TTS_TIMING
+@@ -126,6 +127,13 @@ struct tts_transformer_model {
+ 
+     struct ggml_context * ctx = nullptr;
+     ggml_backend_buffer_t buffer = nullptr;
++    // QWEN3_TTS_TEXT_EMBD_CPU=1: talker.text_embd lives in host RAM (get_rows runs on CPU).
++    struct ggml_context * ctx_cpu = nullptr;
++    ggml_backend_buffer_t buffer_cpu = nullptr;
++    std::unique_ptr<ReadonlyTensorMapping> text_embd_mapping;
++    // QWEN3_TTS_QKV_DEDUP=1: metadata-only Q/K/V tensors (never allocated);
++    // layer.attn_q/k/v become views into the packed attn_qkv tensor.
++    struct ggml_context * ctx_meta = nullptr;
+ 
+     std::map<std::string, struct ggml_tensor *> tensors;
+ };
+diff --git a/src/tts_transformer.cpp b/src/tts_transformer.cpp
+index d650906..b20536e 100644
+--- a/src/tts_transformer.cpp
++++ b/src/tts_transformer.cpp
+@@ -39,6 +39,20 @@ void free_transformer_model(tts_transformer_model & model) {
+         ggml_free(model.ctx);
+         model.ctx = nullptr;
+     }
++    if (model.buffer_cpu) {
++        ggml_backend_buffer_free(model.buffer_cpu);
++        model.buffer_cpu = nullptr;
++    }
++    if (model.ctx_cpu) {
++        ggml_free(model.ctx_cpu);
++        model.ctx_cpu = nullptr;
++    }
++    // The GGML from_ptr buffer above never frees its host address.
++    model.text_embd_mapping.reset();
++    if (model.ctx_meta) {
++        ggml_free(model.ctx_meta);
++        model.ctx_meta = nullptr;
++    }
+     model.tensors.clear();
+     model.layers.clear();
+     model.code_pred_layers.clear();
+diff --git a/src/tts_transformer.h b/src/tts_transformer.h
+index 1bc6325..bd62fb8 100644
+--- a/src/tts_transformer.h
++++ b/src/tts_transformer.h
+@@ -173,7 +173,8 @@ public:
+                   const int32_t * reference_codes = nullptr,
+                   int32_t n_reference_frames = 0,
+                   int32_t n_reference_codebooks = 0,
+-                  const tts_code_frame_callback_t * frame_callback = nullptr);
++                  const tts_code_frame_callback_t * frame_callback = nullptr,
++                  bool full_text_input = false);
+     
+     const tts_transformer_config & get_config() const;
+     

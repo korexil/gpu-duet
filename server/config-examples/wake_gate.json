@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "window_seconds": 120,
+  "farewell": true,
+  "wake_patterns": ["<名字>", "<同音的写法>", "<常见的识别错误>"]
+}
