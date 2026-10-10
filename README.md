@@ -136,7 +136,7 @@ ESP-SR 不支持的名字（比如日语名），板载 MultiNet 用拼音近似
 
 ## 快速开始
 
-Windows x64 + NVIDIA 显卡（RTX 20 系及以上），不用编译、不用装 CUDA Toolkit：
+Windows x64 + NVIDIA 显卡（包里编了 RTX 20～50 系，实机测过 40 系），不用编译、不用装 CUDA Toolkit：
 
 ```powershell
 # 1. 引擎：Releases 下载 gpu-duet-tts-win-x64-cuda12-*.zip 解压，再装 CUDA 运行库

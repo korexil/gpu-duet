@@ -21,7 +21,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $upstream = 'https://github.com/Danmoreng/qwen3-tts.cpp.git'
-$commit = '16bb5af'
+$commit = '16bb5afcd06311031c72a8488f8d59660dc2fb46'
 $ttsRepo = 'Qwen/Qwen3-TTS-12Hz-1.7B-Base'
 $llmRepo = 'xbill9/gemma-4-E4B-it-qat-q4_0-exact-gguf'
 $llmFile = 'gemma-4-E4B-it-q4_0-exact.gguf'
@@ -46,8 +46,11 @@ $scripts = Join-Path $Out 'src\qwen3-tts.cpp'
 New-Item -ItemType Directory -Force -Path $ttsDir | Out-Null
 
 if (-not (Test-Path (Join-Path $scripts 'scripts\convert_tts_to_gguf.py'))) {
-    Invoke-Checked 'git clone' { git clone --quiet --filter=blob:none --no-checkout $upstream $scripts }
-    Invoke-Checked 'git checkout' { git -C $scripts checkout --quiet $commit -- scripts }
+    # Only the converter scripts of one pinned commit: a depth-1 fetch, no submodules.
+    Remove-Item -Recurse -Force $scripts -ErrorAction SilentlyContinue
+    Invoke-Checked 'git init' { git init --quiet $scripts }
+    Invoke-Checked 'git fetch' { git -C $scripts fetch --quiet --depth 1 $upstream $commit }
+    Invoke-Checked 'git checkout' { git -C $scripts checkout --quiet FETCH_HEAD -- scripts }
 }
 
 Write-Host "Downloading $ttsRepo ..."
