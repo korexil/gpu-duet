@@ -1,15 +1,22 @@
 # TTS 服务
 
 ```
-pip install numpy soundfile
-python server.py --library ..\native-tts\work\build-cuda\qwen3_tts_bridge.dll ^
-    --dll-dir ..\native-tts\work\build-cuda --dll-dir "%CUDA_PATH%\bin" ^
-    --models models-f16 --icl-prompt voice\icl-prompt.json --language zh --port 18766
+pip install -r requirements.txt
+python server.py --library <包目录>\qwen3_tts_bridge.dll --models D:\models\tts ^
+    --icl-prompt voice\icl-prompt.json --language zh
 ```
+
+DLL 会自动从 `--library` 所在目录（及其 `bin\`）和 `nvidia-cuda-runtime-cu12` / `nvidia-cublas-cu12` 两个 wheel 里找；用 CUDA Toolkit 的话加 `--dll-dir "%CUDA_PATH%\bin"`。
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--language` | `zh` | `zh en ja ko de fr es it pt ru` |
+| `--sentence-pause` | `0.9` | 每句后补齐到多少秒停顿；6 字以内的短句用 0.5 s。设成 0 就只保留模型自带的尾音 |
+| `--port` | `18766` | |
 
 | 接口 | 说明 |
 |---|---|
-| `GET /health` | `{"ready": true, "busy": false, ...}`；`busy` 供 LLM provider 轮流使用 GPU |
+| `GET /health` | `{"ready": true, "busy": false, "sentence_pause": 0.9, ...}`；`busy` 供 LLM provider 轮流使用 GPU |
 | `POST /stream` | `{"text": "..."}` → chunked 原始 PCM（s16le、24 kHz、单声道，`audio/pcm`），一边合成一边返回 |
 | `POST /synthesize` | 同上，但返回完整 WAV，方便试听 |
 

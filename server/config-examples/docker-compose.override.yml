@@ -1,0 +1,9 @@
+# Put next to xiaozhi-esp32-server's docker-compose.yml; `docker compose up -d` merges it.
+# Mounts the turn-taking LLM provider into the stock image, no rebuild or patch needed.
+# GPU_DUET: path to this repository (default: a sibling folder named gpu-duet).
+services:
+  xiaozhi-esp32-server:
+    volumes:
+      - ${GPU_DUET:-../gpu-duet}/server/core/providers/llm/llamacpp_paced:/opt/xiaozhi-esp32-server/core/providers/llm/llamacpp_paced:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux; harmless on Docker Desktop

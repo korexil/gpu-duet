@@ -1,0 +1,22 @@
+# Merge into xiaozhi-esp32-server's data/.config.yaml (single-server deployment).
+# With the web console (manager-api), register the LLM with register-llm.sql and set
+# the TTS fields below in the console instead.
+selected_module:
+  LLM: LocalPaced
+  TTS: LocalTTS
+
+LLM:
+  LocalPaced:
+    type: llamacpp_paced
+    base_url: http://host.docker.internal:18080
+    voice_health_url: http://host.docker.internal:18766/health   # remove to turn GPU turn-taking off
+    max_tokens: 400
+    temperature: 0.8
+    top_p: 0.95
+    top_k: 64
+
+TTS:
+  LocalTTS:
+    type: index_stream
+    api_url: http://host.docker.internal:18766/stream
+    output_dir: tmp/

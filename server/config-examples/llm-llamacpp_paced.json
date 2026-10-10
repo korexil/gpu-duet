@@ -1,9 +1,0 @@
-{
-  "type": "llamacpp_paced",
-  "base_url": "http://host.docker.internal:18080",
-  "voice_health_url": "http://host.docker.internal:18766/health",
-  "max_tokens": 400,
-  "temperature": 0.8,
-  "top_p": 0.95,
-  "top_k": 64
-}

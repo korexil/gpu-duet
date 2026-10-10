@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 262" width="480" height="262" font-family="-apple-system,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
 <defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#e66767" fill-opacity="0.18"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e66767" stroke-width="2"/></pattern></defs>
 <text x="0.0" y="16.0" font-size="15" fill="#f0f6fc" text-anchor="start" font-weight="600">长回答首声（s）</text>
-<text x="0.0" y="36.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">越低越好 · GPU 轮流</text>
+<text x="0.0" y="36.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">越低越好 · GPU 协调</text>
 <text x="0.0" y="65.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">之前</text>
-<rect x="40.0" y="48.0" width="112.0" height="24" rx="3.0" fill="#5d5c58"/>
+<rect x="40.0" y="48.0" width="128.0" height="24" rx="3.0" fill="#5d5c58"/>
 <line x1="40" y1="46" x2="40" y2="74" stroke="#3d444d"/>
-<text x="158.0" y="65.0" font-size="14" fill="#f0f6fc" text-anchor="start" font-weight="600">1.60</text>
+<text x="174.0" y="65.0" font-size="14" fill="#f0f6fc" text-anchor="start" font-weight="600">3.20</text>
 <text x="0.0" y="99.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">之后</text>
-<rect x="40.0" y="82.0" width="74.2" height="24" rx="3.0" fill="#3987e5"/>
+<rect x="40.0" y="82.0" width="73.2" height="24" rx="3.0" fill="#3987e5"/>
 <line x1="40" y1="80" x2="40" y2="108" stroke="#3d444d"/>
-<text x="120.2" y="99.0" font-size="14" fill="#f0f6fc" text-anchor="start" font-weight="600">1.06</text>
+<text x="119.2" y="99.0" font-size="14" fill="#f0f6fc" text-anchor="start" font-weight="600">1.83</text>
 <text x="260.0" y="16.0" font-size="15" fill="#f0f6fc" text-anchor="start" font-weight="600">长回答断音（s）</text>
-<text x="260.0" y="36.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">越低越好 · GPU 轮流</text>
+<text x="260.0" y="36.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">越低越好 · GPU 协调</text>
 <text x="260.0" y="65.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">之前</text>
-<rect x="300.0" y="48.0" width="102.9" height="24" rx="3.0" fill="#5d5c58"/>
+<rect x="300.0" y="48.0" width="90.8" height="24" rx="3.0" fill="#5d5c58"/>
 <line x1="300" y1="46" x2="300" y2="74" stroke="#3d444d"/>
-<text x="408.9" y="65.0" font-size="14" fill="#f0f6fc" text-anchor="start" font-weight="600">1.47</text>
+<text x="396.8" y="65.0" font-size="14" fill="#f0f6fc" text-anchor="start" font-weight="600">2.27</text>
 <text x="260.0" y="99.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="400">之后</text>
 <line x1="300" y1="80" x2="300" y2="108" stroke="#3d444d"/>
 <text x="306.0" y="99.0" font-size="14" fill="#f0f6fc" text-anchor="start" font-weight="600">0.00</text>

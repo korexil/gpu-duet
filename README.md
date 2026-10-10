@@ -4,7 +4,7 @@
 
 *Local LLM + zero-shot voice-cloning TTS taking turns on one 8 GB GPU — offline, no stutter, your own voice.*
 
-[效果](#效果) · [做法](#做法) · [实现细节](#实现细节) · [快速开始](#快速开始) · [接到别的管线](#接到别的管线) · [24 条踩坑](docs/pitfalls.md)
+[效果](#效果) · [Benchmark](#benchmark) · [做法](#做法) · [实现细节](#实现细节) · [快速开始](#快速开始) · [接到别的管线](#接到别的管线) · [26 条踩坑](docs/pitfalls.md)
 
 - **不依赖云端**：ASR、LLM、TTS 全在本机，断网可用。
 - **8 GB 显存放得下**：LLM 约 2.9 GB + TTS 约 3.9 GB，GPU 合计约 7.3 GB。
@@ -17,10 +17,28 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/before-after-dark.svg">
-  <img alt="四项改进：长回答首声 1.60→1.06 s；断音 1.47→0 s；句间响度差 4.6→3.7 dB；名字唤醒 29→53/60" src="docs/img/before-after-light.svg" width="480">
+  <img alt="四项改进：长回答首声 3.20→1.83 s；断音 2.27→0 s；句间响度差 4.6→3.7 dB；名字唤醒 29→53/60" src="docs/img/before-after-light.svg" width="480">
 </picture>
 
-RTX 4060 Laptop 8 GB · 16 GB RAM · Windows 11。端到端首声：文字输入 1.0～1.8 s；语音输入（说完算起，含 VAD + ASR）2.0～2.9 s。LLM 解码 63～66 tok/s，TTS RTF 约 0.6。各项来自不同测试，条件见 [pitfalls](docs/pitfalls.md)。
+RTX 4060 Laptop 8 GB · 16 GB RAM · Windows 11。首声和断音来自下面的 benchmark（中位数），其余各项条件见 [pitfalls](docs/pitfalls.md)。端到端首声（经过 xiaozhi 和设备）：文字输入 1.0～1.8 s；语音输入（说完算起，含 VAD + ASR）2.0～2.9 s。LLM 解码 63～66 tok/s，TTS RTF 约 0.6。
+
+## Benchmark
+
+把「GPU 协调」和「缩短句子」拆开测，每格 6 次。同一个问题和种子在协调前后生成的文字逐字相同（12/12 对），差别只来自调度。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/bench-dark.svg">
+  <img alt="四种情况的首声和断音合计：无调度 3.20 s / 2.27 s；仅缩短句子 2.62 s / 0.48 s；仅 GPU 协调 1.83 s / 0；两者都开 1.42 s / 0" src="docs/img/bench-light.svg" width="480">
+</picture>
+
+| 情况 | 句长中位数 | 首声 s | 断音合计 s | 有断音 |
+|---|---|---|---|---|
+| 无调度 | 40 字 | 3.20（2.89～3.53） | 2.27（1.39～5.12） | 6/6 |
+| 仅缩短句子（+0.9 s 停顿） | 13.5 字 | 2.62（2.06～2.68） | 0.48（0～1.55） | 4/6 |
+| 仅 GPU 协调 | 40 字 | 1.83（1.49～1.92） | 0 | 0/6 |
+| 缩短句子 + GPU 协调 | 13.5 字 | 1.42（1.29～1.64） | 0 | 0/6 |
+
+缩短句子能减少断音，但只有 GPU 协调能稳定压到 0。方法、原始数据和复现命令：[bench/](bench/README.md)。
 
 ## 做法
 
@@ -118,24 +136,25 @@ ESP-SR 不支持的名字（比如日语名），板载 MultiNet 用拼音近似
 
 ## 快速开始
 
-先不接设备，只验证 GPU 轮流（启动 TTS 和 LLM 后）：
+Windows x64 + NVIDIA 显卡（RTX 20 系及以上），不用编译、不用装 CUDA Toolkit：
 
-```bash
-python tools/turn_taking_sim.py --mode plain --question "Tell me about your day, a bit longer."
-python tools/turn_taking_sim.py --mode turns --question "Tell me about your day, a bit longer."
-# 输出 first_audio_s / underrun_total_s / worst_gap_s；两次之间等几秒让 GPU 降频
+```powershell
+# 1. 引擎：Releases 下载 gpu-duet-tts-win-x64-cuda12-*.zip 解压，再装 CUDA 运行库
+pip install -r tts-service/requirements.txt nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
+# 2. 模型：下载并转换 TTS（F16 GGUF），下载 LLM（GGUF）
+native-tts\setup-models.ps1 -Out D:\models -InstallDeps
+# 3. 声音：用你自己的 3～10 秒参考音
+python tts-service\extract_voice.py --library <解压目录>\qwen3_tts_bridge.dll --models D:\models\tts `
+    --wav my_voice.wav --text my_voice.txt --out voice\icl-prompt.json
+# 4. 启动 TTS（先于 LLM），再启动 LLM（llama.cpp 的 llama-server）
+python tts-service\server.py --library <解压目录>\qwen3_tts_bridge.dll --models D:\models\tts --icl-prompt voice\icl-prompt.json --language zh
+scripts\start-llm.ps1 -LlamaServer <llama.cpp>\llama-server.exe -Model D:\models\llm\gemma-4-E4B-it-q4_0-exact.gguf
 ```
 
-完整步骤：
+5. 先不接设备，验证 GPU 轮流：`python tools/turn_taking_sim.py --mode turns --question "..."`，或者整套 [benchmark](bench/README.md)。
+6. 接 xiaozhi：挂载一个文件夹 + 两段配置，**不用打补丁**，见 [server/README.md](server/README.md)。
 
-```text
-1. 编译 TTS 引擎                native-tts/README.md
-2. 用自己的参考音提取声音提示     native-tts/README.md §3
-3. 启动 TTS 服务（先于 LLM）      tts-service/README.md
-4. 启动 LLM                     scripts/start-llm.ps1
-5. 接入 xiaozhi-esp32-server     server/README.md
-6. 端到端测量                    tools/device_probe.py · tools/loudness_stats.py
-```
+自己编译引擎见 [native-tts/README.md](native-tts/README.md)。
 
 ## 接到别的管线
 
@@ -147,9 +166,10 @@ python tools/turn_taking_sim.py --mode turns --question "Tell me about your day,
 ## 目录
 
 ```
+bench/        GPU 协调 × 句子长短 的 benchmark、原始结果
 docs/         architecture.md · pitfalls.md · img/（README 图表，make_figures.py 重新生成）
-native-tts/   qwen3-tts.cpp 补丁 + Windows CUDA 编译脚本
-tts-service/  HTTP TTS 服务
+native-tts/   qwen3-tts.cpp 补丁 + Windows CUDA 编译 / 打包脚本 + 模型下载转换脚本
+tts-service/  HTTP TTS 服务 + 声音提示提取
 scripts/      llama-server 启动参数
 server/       xiaozhi-esp32-server 补丁（基于 a6cd755）、新增模块、配置示例
 tools/        device_probe · loudness_stats · turn_taking_sim · wake_test · esp32/xiaozhi_assets

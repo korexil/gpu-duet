@@ -2,8 +2,8 @@
 
   python docs/img/make_figures.py
 
-Numbers come from docs/pitfalls.md and docs/architecture.md. The timeline is a
-schematic; only its annotated values are measured.
+Numbers come from bench/results/runs.jsonl (medians, long sentences), docs/pitfalls.md
+and docs/architecture.md. The timeline is a schematic; only its annotated values are measured.
 """
 from pathlib import Path
 
@@ -48,16 +48,16 @@ def timeline():
     sx = lambda s: x0 + (x1 - x0) * s / seconds
     lanes = [("LLM", "llm"), ("TTS", "tts"), ("播放", "play")]
     panels = [
-        ("同时跑：TTS 被拖慢（RTF 1.1～1.6）", 1.60, "断音合计 1.47 s", {
-            "llm": [(0, 2.6)],
-            "tts": [(0.3, 2.2), (2.25, 4.1), (4.15, 6.0)],
-            "play": [(1.6, 3.0), (3.0, 3.5), (3.9, 4.4), (4.75, 5.7)],
-            "gap": [(3.5, 3.9), (4.4, 4.75)],
+        ("同时跑：TTS 被拖慢（RTF 1.1～1.6）", 3.20, "断音合计 2.27 s", {
+            "llm": [(0, 6.0)],
+            "tts": [(0.3, 2.9), (2.95, 4.9), (4.95, 6.0)],
+            "play": [(3.2, 4.1), (4.6, 5.2), (5.6, 6.0)],
+            "gap": [(4.1, 4.6), (5.2, 5.6)],
         }),
-        ("轮流跑：写完一句就让出 GPU（RTF 约 0.6）", 1.06, "断音 0", {
-            "llm": [(0, 0.3), (1.0, 1.3), (2.1, 2.4)],
-            "tts": [(0.3, 1.0), (1.3, 2.1), (2.4, 3.2)],
-            "play": [(1.06, 2.46), (2.46, 3.86), (3.86, 5.26)],
+        ("轮流跑：写完一句就让出 GPU（RTF 约 0.6）", 1.83, "断音 0", {
+            "llm": [(0, 0.3), (1.3, 1.6), (2.5, 2.8)],
+            "tts": [(0.3, 1.3), (1.6, 2.5), (2.8, 3.7)],
+            "play": [(1.83, 3.2), (3.2, 4.6), (4.6, 6.0)],
             "gap": [],
         }),
     ]
@@ -116,8 +116,8 @@ def vram():
 def before_after():
     """Four measured improvements, each on its own scale."""
     panels = [
-        ("长回答首声（s）", "越低越好 · GPU 轮流", 1.60, 1.06, 2.0, "{:.2f}"),
-        ("长回答断音（s）", "越低越好 · GPU 轮流", 1.47, 0.0, 2.0, "{:.2f}"),
+        ("长回答首声（s）", "越低越好 · GPU 协调", 3.20, 1.83, 3.5, "{:.2f}"),
+        ("长回答断音（s）", "越低越好 · GPU 协调", 2.27, 0.0, 3.5, "{:.2f}"),
         ("句间响度差（dB）", "越低越好 · 逐句整形", 4.6, 3.7, 6.0, "{:.1f}"),
         ("名字唤醒命中（/60）", "越高越好 · 服务端唤醒", 29, 53, 60, "{:.0f}"),
     ]
@@ -138,8 +138,46 @@ def before_after():
     write("before-after", 480, 262, body)
 
 
+def bench():
+    """Median and min-max per case from bench/results/runs.jsonl."""
+    import json
+    import statistics
+    runs = OUT.parents[1] / "bench" / "results" / "runs.jsonl"
+    if not runs.exists():
+        return
+    rows = [json.loads(line) for line in runs.open(encoding="utf-8")]
+    cases = [("long", "plain", "无调度"), ("short", "plain", "仅缩短句子"),
+             ("long", "turns", "仅 GPU 协调"), ("short", "turns", "缩短句子 + 协调")]
+    metrics = [("first_audio_s", "首声（s）"), ("underrun_total_s", "断音合计（s）")]
+    x0, x1, body, y = 118, 430, [], 0
+    for key, title in metrics:
+        groups = [[r[key] for r in rows if r["case"] == c and r["mode"] == m] for c, m, _ in cases]
+        top = max(max(g) for g in groups if g) * 1.05 or 1.0
+        sx = lambda v: x0 + (x1 - x0) * v / top
+        body.append(t(0, y + 16, title, 15, weight=600))
+        body.append(t(x1, y + 16, "条 = 中位数 · 线 = 最小～最大", 12, "muted", "end"))
+        y += 28
+        for (case, mode, label), values in zip(cases, groups):
+            if not values:
+                continue
+            med, lo, hi = statistics.median(values), min(values), max(values)
+            key_color = "llm" if mode == "turns" else "neutral"
+            body.append(t(x0 - 10, y + 15, label, 13, "text", "end"))
+            if med:
+                body.append(bar(x0, sx(med), y + 2, 18, key_color))
+            body.append(f'<line x1="{sx(lo):.1f}" y1="{y + 11}" x2="{sx(hi):.1f}" y2="{y + 11}" stroke="{{text}}" stroke-width="1.5"/>')
+            for v in (lo, hi):
+                body.append(f'<line x1="{sx(v):.1f}" y1="{y + 6}" x2="{sx(v):.1f}" y2="{y + 16}" stroke="{{text}}" stroke-width="1.5"/>')
+            body.append(t(max(sx(hi), sx(med)) + 8, y + 15, f"{med:.2f}", 13, "text", "start", 600))
+            y += 28
+        body.append(f'<line x1="{x0}" y1="{y - 112}" x2="{x0}" y2="{y}" stroke="{{grid}}"/>')
+        y += 18
+    write("bench", 480, y, body)
+
+
 if __name__ == "__main__":
     timeline()
     vram()
     before_after()
+    bench()
     print("wrote", sorted(p.name for p in OUT.glob("*.svg")))

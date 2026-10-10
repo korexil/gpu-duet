@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 316" width="480" height="316" font-family="-apple-system,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
+<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#e34948" fill-opacity="0.18"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e34948" stroke-width="2"/></pattern></defs>
+<text x="0.0" y="16.0" font-size="15" fill="#1f2328" text-anchor="start" font-weight="600">首声（s）</text>
+<text x="430.0" y="16.0" font-size="12" fill="#59636e" text-anchor="end" font-weight="400">条 = 中位数 · 线 = 最小～最大</text>
+<text x="108.0" y="43.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">无调度</text>
+<rect x="118.0" y="30.0" width="269.4" height="18" rx="3.0" fill="#b7b5ae"/>
+<line x1="361.3" y1="39" x2="415.1" y2="39" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="361.3" y1="34" x2="361.3" y2="44" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="415.1" y1="34" x2="415.1" y2="44" stroke="#1f2328" stroke-width="1.5"/>
+<text x="423.1" y="43.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">3.20</text>
+<text x="108.0" y="71.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">仅缩短句子</text>
+<rect x="118.0" y="58.0" width="220.1" height="18" rx="3.0" fill="#b7b5ae"/>
+<line x1="291.4" y1="67" x2="343.6" y2="67" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="291.4" y1="62" x2="291.4" y2="72" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="343.6" y1="62" x2="343.6" y2="72" stroke="#1f2328" stroke-width="1.5"/>
+<text x="351.6" y="71.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">2.62</text>
+<text x="108.0" y="99.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">仅 GPU 协调</text>
+<rect x="118.0" y="86.0" width="154.5" height="18" rx="3.0" fill="#2a78d6"/>
+<line x1="243.4" y1="95" x2="279.6" y2="95" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="243.4" y1="90" x2="243.4" y2="100" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="279.6" y1="90" x2="279.6" y2="100" stroke="#1f2328" stroke-width="1.5"/>
+<text x="287.6" y="99.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">1.83</text>
+<text x="108.0" y="127.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">缩短句子 + 协调</text>
+<rect x="118.0" y="114.0" width="120.0" height="18" rx="3.0" fill="#2a78d6"/>
+<line x1="226.6" y1="123" x2="256.0" y2="123" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="226.6" y1="118" x2="226.6" y2="128" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="256.0" y1="118" x2="256.0" y2="128" stroke="#1f2328" stroke-width="1.5"/>
+<text x="264.0" y="127.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">1.42</text>
+<line x1="118" y1="28" x2="118" y2="140" stroke="#d1d9e0"/>
+<text x="0.0" y="174.0" font-size="15" fill="#1f2328" text-anchor="start" font-weight="600">断音合计（s）</text>
+<text x="430.0" y="174.0" font-size="12" fill="#59636e" text-anchor="end" font-weight="400">条 = 中位数 · 线 = 最小～最大</text>
+<text x="108.0" y="201.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">无调度</text>
+<rect x="118.0" y="188.0" width="131.7" height="18" rx="3.0" fill="#b7b5ae"/>
+<line x1="198.7" y1="197" x2="415.1" y2="197" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="198.7" y1="192" x2="198.7" y2="202" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="415.1" y1="192" x2="415.1" y2="202" stroke="#1f2328" stroke-width="1.5"/>
+<text x="423.1" y="201.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">2.27</text>
+<text x="108.0" y="229.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">仅缩短句子</text>
+<rect x="118.0" y="216.0" width="28.1" height="18" rx="3.0" fill="#b7b5ae"/>
+<line x1="118.0" y1="225" x2="208.0" y2="225" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="118.0" y1="220" x2="118.0" y2="230" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="208.0" y1="220" x2="208.0" y2="230" stroke="#1f2328" stroke-width="1.5"/>
+<text x="216.0" y="229.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">0.48</text>
+<text x="108.0" y="257.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">仅 GPU 协调</text>
+<line x1="118.0" y1="253" x2="118.0" y2="253" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="118.0" y1="248" x2="118.0" y2="258" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="118.0" y1="248" x2="118.0" y2="258" stroke="#1f2328" stroke-width="1.5"/>
+<text x="126.0" y="257.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">0.00</text>
+<text x="108.0" y="285.0" font-size="13" fill="#1f2328" text-anchor="end" font-weight="400">缩短句子 + 协调</text>
+<line x1="118.0" y1="281" x2="118.0" y2="281" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="118.0" y1="276" x2="118.0" y2="286" stroke="#1f2328" stroke-width="1.5"/>
+<line x1="118.0" y1="276" x2="118.0" y2="286" stroke="#1f2328" stroke-width="1.5"/>
+<text x="126.0" y="285.0" font-size="13" fill="#1f2328" text-anchor="start" font-weight="600">0.00</text>
+<line x1="118" y1="186" x2="118" y2="298" stroke="#d1d9e0"/>
+</svg>

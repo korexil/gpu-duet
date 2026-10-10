@@ -47,7 +47,8 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
                 self.send_error(404)
                 return
             body = json.dumps(dict(ready=True, busy=busy.locked(), backend=tts.backend,
-                                   active_backend=tts.active_backend)).encode()
+                                   active_backend=tts.active_backend,
+                                   sentence_pause=leveler.sentence_pause)).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -137,15 +138,29 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
     return ThreadingHTTPServer((host, port), Handler)
 
 
+def default_dll_dirs(library):
+    """The library's folder (and its bin/ with the ggml DLLs), plus the CUDA runtime and cuBLAS
+    from the nvidia-cuda-runtime-cu12 / nvidia-cublas-cu12 wheels when they are installed."""
+    here = Path(library).resolve().parent
+    dirs = [here, here / 'bin']
+    try:
+        import nvidia
+        dirs += [Path(base) / name / 'bin' for base in nvidia.__path__ for name in ('cuda_runtime', 'cublas')]
+    except ImportError:
+        pass
+    return [str(d) for d in dirs if d.is_dir()]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--library', required=True, help='qwen3_tts_bridge shared library')
-    parser.add_argument('--dll-dir', action='append', default=[], help='extra DLL search dirs (ggml, CUDA bin)')
+    parser.add_argument('--dll-dir', action='append', default=[], help='extra DLL search dirs, e.g. a CUDA toolkit bin')
     parser.add_argument('--models', required=True, help='directory with the converted F16 GGUF models')
     parser.add_argument('--icl-prompt', required=True, help='voice clone prompt from --extract-icl-prompt')
     parser.add_argument('--backend', choices=['cuda', 'cpu'], default='cuda')
     parser.add_argument('--language', default='zh', help='zh en ja ko de fr es it pt ru')
     parser.add_argument('--port', type=int, default=18766)
+    parser.add_argument('--sentence-pause', type=float, default=0.9, help='seconds of silence after each sentence')
     parser.add_argument('--log')
     args = parser.parse_args()
     for key, value in ENGINE_ENV.items():
@@ -155,12 +170,12 @@ def main():
     from native_engine import NativeTTS
 
     tts = NativeTTS(args.library, args.models, args.icl_prompt, backend=args.backend,
-                    dll_dirs=args.dll_dir, language=args.language)
+                    dll_dirs=default_dll_dirs(args.library) + args.dll_dir, language=args.language)
     try:
         warm = tts.synthesize({'zh': '嗯。', 'ja': 'うん。'}.get(args.language, 'OK.'), lambda wave: None)
         if not warm['success']:
             raise RuntimeError('warmup failed')
-        server = make_server(tts, Leveler(), args.port, args.log)
+        server = make_server(tts, Leveler(sentence_pause=args.sentence_pause), args.port, args.log)
         print(json.dumps(dict(ready=True, port=args.port, active_backend=tts.active_backend)), flush=True)
         try:
             server.serve_forever()

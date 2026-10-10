@@ -29,7 +29,9 @@ class Leveler:
     smoothly and ends every sentence with the same pause.
     """
 
-    def __init__(self, target_db=-18.0, max_boost_db=9.0):
+    def __init__(self, target_db=-18.0, max_boost_db=9.0, sentence_pause=SENTENCE_PAUSE):
+        self.sentence_pause = sentence_pause
+        self.clause_pause = min(CLAUSE_PAUSE, sentence_pause)
         self.target = 10 ** (target_db / 20)
         self.limit = 10 ** (max_boost_db / 20)
         self.gain = 1.0
@@ -108,7 +110,7 @@ class Leveler:
         return out
 
     def _pause(self):
-        return CLAUSE_PAUSE if len(self.text.strip()) <= 6 else SENTENCE_PAUSE
+        return self.clause_pause if len(self.text.strip()) <= 6 else self.sentence_pause
 
     def finish(self):
         self.last_end = time.monotonic()

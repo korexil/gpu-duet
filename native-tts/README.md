@@ -14,36 +14,46 @@
 全部打开时，常驻显存约 3.7～3.9 GB。在测试过的种子、文本和参数下，输出 PCM 与关闭这些开关时**逐字节相同**；这只说明测过的配置等价，不保证所有输入。
 `tts-service/server.py` 启动时会默认打开这些开关。
 
-**复现性验证：** 用 `build.ps1` 从干净的上游克隆开始编译（CUDA 12.8、`-CudaArch 89`），得到的 DLL 和开发时用的 DLL，在同样的模型、声音提示和文本下，`tts-service` 输出逐字节相同（5/5 句），RTF 0.58～0.61。
+## 1. 引擎：下载预编译包（Windows x64）
 
-## 1. 编译（Windows）
+从 [Releases](https://github.com/korexil/gpu-duet/releases/latest) 下载 `gpu-duet-tts-win-x64-cuda12-sm75-86-89-120.zip`，解压到任意目录。覆盖 RTX 20 / 30 / 40 / 50 系（sm 75 / 86 / 89 / 120）。
+
+CUDA 运行库用 NVIDIA 的官方 wheel，不用装 CUDA Toolkit：
+
+```powershell
+pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
+```
+
+`tts-service` 会自动在包所在目录和这两个 wheel 里找 DLL。另外需要 [VC++ 运行库](https://aka.ms/vs/17/release/vc_redist.x64.exe)（大多数机器已经装了）。包是用 CUDA 12.8 编译的，实测驱动 591.59。
+
+### 或者自己编译
 
 需要：VS 2022 Build Tools（C++ 工作负载，自带 CMake 和 Ninja）、git、驱动支持的 CUDA Toolkit。
 
 ```powershell
-.\build.ps1 -CudaRoot "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" -CudaArch 89
+.\build.ps1 -CudaRoot "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" -CudaArch 89 -WorkDir C:\qtts
 ```
 
-`-CudaArch`：RTX 40 系 = 89，RTX 30 系 = 86。工作目录要用**短路径**（比如 `-WorkDir C:\qtts`）。nvcc 的中间文件嵌套很深，路径一长就会超过 Windows 260 字符的限制，报错 `Could not open output file ...cu.obj.d`。产物在 `<WorkDir>\build-cuda\`：`qwen3_tts_bridge.dll`、`qwen3-tts-cli.exe` 和 ggml 的 DLL。
+`-CudaArch`：RTX 40 系 = 89，RTX 30 系 = 86，可以写多个（`"86;89"`）。工作目录要用**短路径**：nvcc 的中间文件嵌套很深，路径一长就会超过 Windows 260 字符的限制，报错 `Could not open output file ...cu.obj.d`。加 `-Package` 会打出和 Release 一样的 zip。
 
-## 2. 转换模型（F16 GGUF）
+用 `build.ps1` 从干净的上游克隆编译出的 DLL，和开发时用的 DLL，在同样的模型、声音提示和文本下输出逐字节相同（5/5 句），RTF 0.58～0.61。
 
-从 Hugging Face 下载 `Qwen/Qwen3-TTS-12Hz-1.7B-Base`，用上游自带的脚本转换：
+## 2. 模型
 
-```bash
-python scripts/convert_tts_to_gguf.py       --input <snapshot> --output models-f16/qwen-talker-1.7b-base-F16.gguf --type f16
-python scripts/convert_tokenizer_to_gguf.py --input <snapshot> --output models-f16/qwen-tokenizer-12hz-F16.gguf --type f16
+```powershell
+.\setup-models.ps1 -Out D:\models -InstallDeps
 ```
 
-参数名以上游脚本的 `--help` 为准。Q8 talker 显存更省，但听感明显更平淡，这里用 F16。
+- **TTS**：下载 `Qwen/Qwen3-TTS-12Hz-1.7B-Base`，用上游的转换脚本转成 F16 GGUF（talker + tokenizer 两个文件，约 4.2 GB）。转换只要 CPU 版 torch，`-InstallDeps` 会装。Q8 talker 显存更省，但听感明显更平淡，这里用 F16。
+- **LLM**：下载 `xbill9/gemma-4-E4B-it-qat-q4_0-exact-gguf`（4.2 GB，非官方，逐位保留 Google 的 QAT 权重）。本仓库的数据都是用它测的；Google 官方的 `gemma-4-E4B-it-qat-q4_0-gguf`（5.2 GB）应该也能用，但没测过。不要 LLM 就加 `-SkipLlm`。
 
 ## 3. 用你自己的参考音提取「声音提示」
 
 准备一段 3～10 秒、干净、说话风格就是你想要的参考音，加上它的逐字文本：
 
 ```powershell
-work\build-cuda\qwen3-tts-cli.exe -m models-f16 --backend cpu -j 4 `
-    -r my_voice.wav --reference-text-file my_voice.txt --extract-icl-prompt voice\icl-prompt.json
+python ..\tts-service\extract_voice.py --library <包目录>\qwen3_tts_bridge.dll --models D:\models\tts `
+    --wav my_voice.wav --text my_voice.txt --out voice\icl-prompt.json
 ```
 
 语气、语速和句尾习惯主要从参考音里学：参考音偏快，合成就偏快。

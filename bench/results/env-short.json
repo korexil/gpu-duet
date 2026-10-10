@@ -1,0 +1,9 @@
+{
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU, 591.59, 8188 MiB",
+  "os": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.10",
+  "llm_model": "gemma-4-E4B-it-q4_0-exact.gguf",
+  "llm_ctx": 8192,
+  "tts_backend": "CUDA0",
+  "sentence_pause": 0.9
+}
