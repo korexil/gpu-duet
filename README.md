@@ -208,4 +208,4 @@ tools/        device_probe · loudness_stats · turn_taking_sim · wake_test · 
 
 ## 许可
 
-MIT。上游各自适用自己的许可：xiaozhi-esp32-server、qwen3-tts.cpp、ggml（MIT）；Qwen3-TTS、Gemma 4（Apache-2.0）。本仓库不分发模型和 CUDA 运行库。用他人的声音做参考音前，先取得本人同意。
+[Apache-2.0](LICENSE)，署名见 [NOTICE](NOTICE)。分发或修改本仓库的代码时，需要保留 NOTICE，并在改动过的文件里注明改过。上游各自适用自己的许可：xiaozhi-esp32-server、qwen3-tts.cpp、ggml（MIT）；Qwen3-TTS、Gemma 4（Apache-2.0）。本仓库不分发模型和 CUDA 运行库。用他人的声音做参考音前，先取得本人同意。

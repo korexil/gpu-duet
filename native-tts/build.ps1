@@ -77,6 +77,7 @@ if ($Package) {
     Copy-Item (Join-Path $source 'LICENSE') (Join-Path $stage 'LICENSE-qwen3-tts.cpp.txt')
     Copy-Item (Join-Path $source 'ggml\LICENSE') (Join-Path $stage 'LICENSE-ggml.txt')
     Copy-Item (Join-Path $PSScriptRoot '..\LICENSE') (Join-Path $stage 'LICENSE-gpu-duet.txt')
+    Copy-Item (Join-Path $PSScriptRoot '..\NOTICE') (Join-Path $stage 'NOTICE.txt')
     $zip = Join-Path $WorkDir "$name.zip"
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
     Get-Item $zip | Select-Object FullName, Length | Format-Table -AutoSize
