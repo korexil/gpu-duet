@@ -46,7 +46,7 @@
   | 仅 GPU 协调 | 1.83 s | 0 | 0/6 |
   | 缩短句子 + 协调 | 1.42 s | 0 | 0/6 |
 
-  早先单次测量时以为「句子改短、加停顿后不轮流也不断音」，重复 6 次后不成立。实现：`server/core/providers/llm/llamacpp_paced/`；测量：`bench/run.py`。
+  早先单次测量时以为「句子改短、加停顿后不轮流也不断音」，重复 6 次后不成立。断不断音取决于回答多长：只缩短句子时，音频 34 s 以内的 2 次都没断，35 s 以上的 4 次全断（0.45～1.55 s）。LLM 一直在后台生成，回答越长，TTS 被拖慢的时间越长，前面攒下的余量迟早用完。早先那次只测了一次，也没留下回答长度，很可能碰上的是短回答。实现：`server/core/providers/llm/llamacpp_paced/`；测量：`bench/run.py`。
 
 **10. 不要用 chat 接口的 assistant 预填来分块续写。** 模板会去掉预填末尾的空白，续写和一次性生成不一致。改用 `/completion`，prompt 为 `[渲染好的模板字符串, *已生成的 token id]`：前缀逐 token 一致，KV 缓存命中。`stop_type == "eos"` 时，最后的结束 token 会被 `/detokenize` 还原成 `<turn|>` 之类的文字，要去掉。
 
@@ -105,3 +105,11 @@
 **25. 同一个 seed 在 llama-server 上不一定生成同样的文字。** slot 里缓存的前缀长度不同，批的形状就不同，logits 有细微差异，采样从某个 token 起分叉。实测同 seed 连续三次：第一次和后两次不同。每次先发一个无关的 `cache_prompt: false` 短请求把缓存顶掉，三次完全一致。做 A/B 对照时要这样做（`bench/run.py`）。
 
 **26. 测量时先确认 GPU 上只有你要测的进程。** 一个守护任务在测试中途把旧的 TTS 重新拉起，两个 TTS 同时占着显卡，合成卡死；之后 llama-server 的权重被挪到共享内存（第 12 条），停掉多余进程后也不会自己回来，要重启 llama-server。任务管理器里看每个进程的「专用 GPU 内存」。
+
+## 八、安装脚本（Windows）
+
+**27. Windows PowerShell 5.1 里，脚本输出一重定向就报错退出。** `$ErrorActionPreference = 'Stop'` 时，git、cmake、pip、`vcvars64.bat` 往 stderr 打的普通进度信息（如 `Cloning into...`）会被当成致命错误。直接在终端里跑没事，`*> build.log` 存日志就会在克隆这一步失败。改法：调用外部程序时临时改成 `Continue`，只看退出码（`native-tts/build.ps1` 的 `Invoke-Native`）。顺带：克隆失败一半时目录已经存在，下次运行会把半截的源码当成已完成，所以改成补丁打完才写一个完成标记。
+
+**28. `git clone --filter=blob:none` 之后 `git checkout <commit> -- scripts` 会失败**，报 `unable to read sha1 file`，部分克隆没有按需拉取文件内容。只要固定提交里的几个文件时，用 `git init` + `git fetch --depth 1 <url> <完整 SHA>` + `git checkout FETCH_HEAD -- scripts`（`native-tts/setup-models.ps1`）。
+
+**29. venv 放在太深的目录，装 torch 会失败**：`OSError: [WinError 206] 文件名或扩展名太长`。torch 依赖里有很长的测试文件路径，加上 venv 本身的路径就超过 260 字符。venv 放在短路径下（比如 `D:\venv`），或者在系统里开启长路径支持。

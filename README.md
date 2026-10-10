@@ -4,7 +4,7 @@
 
 *Local LLM + zero-shot voice-cloning TTS taking turns on one 8 GB GPU — offline, no stutter, your own voice.*
 
-[效果](#效果) · [Benchmark](#benchmark) · [做法](#做法) · [实现细节](#实现细节) · [快速开始](#快速开始) · [接到别的管线](#接到别的管线) · [26 条踩坑](docs/pitfalls.md)
+[效果](#效果) · [Benchmark](#benchmark) · [做法](#做法) · [实现细节](#实现细节) · [快速开始](#快速开始) · [接到别的管线](#接到别的管线) · [29 条踩坑](docs/pitfalls.md)
 
 - **不依赖云端**：ASR、LLM、TTS 全在本机，断网可用。
 - **8 GB 显存放得下**：LLM 约 2.9 GB + TTS 约 3.9 GB，GPU 合计约 7.3 GB。
@@ -136,23 +136,48 @@ ESP-SR 不支持的名字（比如日语名），板载 MultiNet 用拼音近似
 
 ## 快速开始
 
-Windows x64 + NVIDIA 显卡（包里编了 RTX 20～50 系，实机测过 40 系），不用编译、不用装 CUDA Toolkit：
+**需要：** Windows 10/11 x64、NVIDIA 显卡（实机测过 RTX 40 系）、Python 3.10+、git、llama.cpp 的 [`llama-server`](https://github.com/ggml-org/llama.cpp/releases)（下 Windows CUDA 版）。不用编译，不用装 CUDA Toolkit。下面的命令都在本仓库根目录的 PowerShell 里执行；如果提示「禁止运行脚本」，先执行一次 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。
+
+**1. 下载引擎。** 从 [Releases](https://github.com/korexil/gpu-duet/releases/latest) 下载 zip，解压到比如 `D:\gpu-duet-engine`。再装 Python 依赖，CUDA 运行库也在这一步装好：
 
 ```powershell
-# 1. 引擎：Releases 下载 gpu-duet-tts-win-x64-cuda12-*.zip 解压，再装 CUDA 运行库
-pip install -r tts-service/requirements.txt nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
-# 2. 模型：下载并转换 TTS（F16 GGUF），下载 LLM（GGUF）
-native-tts\setup-models.ps1 -Out D:\models -InstallDeps
-# 3. 声音：用你自己的 3～10 秒参考音
-python tts-service\extract_voice.py --library <解压目录>\qwen3_tts_bridge.dll --models D:\models\tts `
-    --wav my_voice.wav --text my_voice.txt --out voice\icl-prompt.json
-# 4. 启动 TTS（先于 LLM），再启动 LLM（llama.cpp 的 llama-server）
-python tts-service\server.py --library <解压目录>\qwen3_tts_bridge.dll --models D:\models\tts --icl-prompt voice\icl-prompt.json --language zh
-scripts\start-llm.ps1 -LlamaServer <llama.cpp>\llama-server.exe -Model D:\models\llm\gemma-4-E4B-it-q4_0-exact.gguf
+pip install -r tts-service\requirements.txt nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
 ```
 
-5. 先不接设备，验证 GPU 轮流：`python tools/turn_taking_sim.py --mode turns --question "..."`，或者整套 [benchmark](bench/README.md)。
-6. 接 xiaozhi：挂载一个文件夹 + 两段配置，**不用打补丁**，见 [server/README.md](server/README.md)。
+**2. 下载模型。** 下载约 8.7 GB，占盘约 13 GB（转换完可以删掉 `D:\models\src`）。TTS 会自动转成引擎用的格式，放在 `D:\models\tts`；LLM 放在 `D:\models\llm`。
+
+```powershell
+.\native-tts\setup-models.ps1 -Out D:\models -InstallDeps
+```
+
+**3. 准备你的声音。** 录一段 3～10 秒的干净语音存成 `my_voice.wav`，把说的内容一字不差写进 `my_voice.txt`：
+
+```powershell
+python tts-service\extract_voice.py --library D:\gpu-duet-engine\qwen3_tts_bridge.dll `
+    --models D:\models\tts --wav my_voice.wav --text my_voice.txt --out voice\icl-prompt.json
+```
+
+**4. 启动 TTS。** 要比 LLM 先启动，否则显存可能被 LLM 先占走（[踩坑 #12](docs/pitfalls.md)）：
+
+```powershell
+python tts-service\server.py --library D:\gpu-duet-engine\qwen3_tts_bridge.dll `
+    --models D:\models\tts --icl-prompt voice\icl-prompt.json --language zh
+```
+
+**5. 另开一个窗口，启动 LLM：**
+
+```powershell
+.\scripts\start-llm.ps1 -LlamaServer D:\llama.cpp\llama-server.exe `
+    -Model D:\models\llm\gemma-4-E4B-it-q4_0-exact.gguf
+```
+
+**6. 验证。** 不接任何设备，让 LLM 讲一段长回答，模拟逐句播放。输出里 `underrun_total_s` 是断音合计，0 就是没卡：
+
+```powershell
+python tools\turn_taking_sim.py --mode turns --question "说说你最喜欢的季节，讲长一点。"
+```
+
+**7. 接到 xiaozhi（可选）。** 挂载一个文件夹、加两段配置，不用打补丁，见 [server/README.md](server/README.md)。
 
 自己编译引擎见 [native-tts/README.md](native-tts/README.md)。
 
