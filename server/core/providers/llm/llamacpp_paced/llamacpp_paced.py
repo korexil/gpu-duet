@@ -82,9 +82,14 @@ class LLMProvider(LLMProviderBase):
         except Exception:
             return False, 0
 
-    def _yield_gpu_to_voice(self):
-        """After handing over a sentence, wait for the TTS to pick it up and finish it."""
-        busy, started_before = self._voice_state()
+    def _yield_gpu_to_voice(self, started_before):
+        """After handing over a sentence, wait for the TTS to pick it up and finish it.
+
+        ``started_before`` is the TTS counter read before the sentence was handed over,
+        so a short sentence that was picked up and finished in the meantime still counts."""
+        busy, started = self._voice_state()
+        if started > started_before:
+            busy = True  # already taken; fall through to waiting for it to finish
         deadline = time.monotonic() + self.handoff_wait
         while not busy:
             if time.monotonic() > deadline:
@@ -136,14 +141,16 @@ class LLMProvider(LLMProviderBase):
             # Hold back an incomplete multi-byte character until the next chunk completes it.
             stable = text.rstrip("�")
             new_text = stable[len(emitted):]
+            hand_over = self.voice_health_url and (any(c in new_text for c in SENTENCE_END)
+                                                   or len(ids) - turn_start >= self.turn_tokens)
+            started_before = self._voice_state()[1] if hand_over else 0  # baseline before the consumer sees the text
             if new_text:
                 yield new_text
                 emitted = stable
             if result.get("stop_type") != "limit" or not result.get("tokens"):
                 break
-            if self.voice_health_url and (any(c in new_text for c in SENTENCE_END)
-                                          or len(ids) - turn_start >= self.turn_tokens):
-                self._yield_gpu_to_voice()
+            if hand_over:
+                self._yield_gpu_to_voice(started_before)
                 turn_start = len(ids)
         if len(text) > len(emitted):
             yield text[len(emitted):]

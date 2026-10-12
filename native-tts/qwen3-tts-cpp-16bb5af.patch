@@ -16,6 +16,157 @@ index 0f4de7d..41f2a44 100644
  option(QWEN3_TTS_BUILD_SHARED "Build shared library for JNI" OFF)
  if(QWEN3_TTS_BUILD_SHARED)
      find_package(JNI REQUIRED)
+diff --git a/src/common/audio_io.cpp b/src/common/audio_io.cpp
+index 093728b..ffe61eb 100644
+--- a/src/common/audio_io.cpp
++++ b/src/common/audio_io.cpp
+@@ -1,4 +1,5 @@
+ #include "qwen3_tts.h"
++#include "common/utf8_path.h"
+ 
+ #include <cstdint>
+ #include <cstdio>
+@@ -10,7 +11,7 @@ namespace qwen3_tts {
+ // WAV file loading (16-bit PCM or 32-bit float)
+ bool load_audio_file(const std::string & path, std::vector<float> & samples,
+                      int & sample_rate) {
+-    FILE * f = fopen(path.c_str(), "rb");
++    FILE * f = utf8_fopen(path, "rb");
+     if (!f) {
+         fprintf(stderr, "ERROR: Cannot open WAV file: %s\n", path.c_str());
+         return false;
+@@ -146,7 +147,7 @@ bool load_audio_file(const std::string & path, std::vector<float> & samples,
+ // WAV file saving (16-bit PCM at specified sample rate)
+ bool save_audio_file(const std::string & path, const std::vector<float> & samples,
+                      int sample_rate) {
+-    FILE * f = fopen(path.c_str(), "wb");
++    FILE * f = utf8_fopen(path, "wb");
+     if (!f) {
+         fprintf(stderr, "ERROR: Cannot create WAV file: %s\n", path.c_str());
+         return false;
+diff --git a/src/common/icl_prompt_io.cpp b/src/common/icl_prompt_io.cpp
+index a5ab16a..29811a8 100644
+--- a/src/common/icl_prompt_io.cpp
++++ b/src/common/icl_prompt_io.cpp
+@@ -1,4 +1,5 @@
+ #include "qwen3_tts.h"
++#include "common/utf8_path.h"
+ 
+ #include <algorithm>
+ #include <cctype>
+@@ -13,7 +14,7 @@ namespace qwen3_tts {
+ namespace {
+ 
+ std::string read_file_text(const std::string & path) {
+-    std::ifstream in(path, std::ios::binary);
++    std::ifstream in(utf8_fs_path(path), std::ios::binary);
+     if (!in) {
+         return {};
+     }
+@@ -261,7 +262,7 @@ bool save_icl_prompt_file(const std::string & path, const icl_prompt & prompt) {
+         return false;
+     }
+ 
+-    std::ofstream out(path, std::ios::out | std::ios::trunc);
++    std::ofstream out(utf8_fs_path(path), std::ios::out | std::ios::trunc);
+     if (!out) {
+         fprintf(stderr, "ERROR: Cannot create ICL prompt file: %s\n", path.c_str());
+         return false;
+diff --git a/src/common/speaker_embedding_io.cpp b/src/common/speaker_embedding_io.cpp
+index 57879b0..4f422d1 100644
+--- a/src/common/speaker_embedding_io.cpp
++++ b/src/common/speaker_embedding_io.cpp
+@@ -1,4 +1,5 @@
+ #include "qwen3_tts.h"
++#include "common/utf8_path.h"
+ 
+ #include <algorithm>
+ #include <cctype>
+@@ -46,7 +47,7 @@ static bool parse_embedding_text(const std::string & text, std::vector<float> &
+ 
+ bool load_speaker_embedding_file(const std::string & path,
+                                  std::vector<float> & embedding) {
+-    std::ifstream in(path, std::ios::binary);
++    std::ifstream in(utf8_fs_path(path), std::ios::binary);
+     if (!in) {
+         fprintf(stderr, "ERROR: Cannot open speaker embedding file: %s\n", path.c_str());
+         return false;
+@@ -85,7 +86,7 @@ bool save_speaker_embedding_file(const std::string & path,
+     }
+ 
+     if (has_json_extension(path)) {
+-        std::ofstream out(path, std::ios::out | std::ios::trunc);
++        std::ofstream out(utf8_fs_path(path), std::ios::out | std::ios::trunc);
+         if (!out) {
+             fprintf(stderr, "ERROR: Cannot create speaker embedding JSON file: %s\n", path.c_str());
+             return false;
+@@ -103,7 +104,7 @@ bool save_speaker_embedding_file(const std::string & path,
+         return true;
+     }
+ 
+-    std::ofstream out(path, std::ios::binary | std::ios::out | std::ios::trunc);
++    std::ofstream out(utf8_fs_path(path), std::ios::binary | std::ios::out | std::ios::trunc);
+     if (!out) {
+         fprintf(stderr, "ERROR: Cannot create speaker embedding binary file: %s\n", path.c_str());
+         return false;
+diff --git a/src/common/utf8_path.h b/src/common/utf8_path.h
+new file mode 100644
+index 0000000..dae5482
+--- /dev/null
++++ b/src/common/utf8_path.h
+@@ -0,0 +1,52 @@
++#pragma once
++
++#include <cstdio>
++#include <filesystem>
++#include <string>
++
++#ifdef _WIN32
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#include <windows.h>
++#endif
++
++namespace qwen3_tts {
++
++// Paths arrive as UTF-8 (from the CLI's UTF-8 argv and from the C bridge). On Windows the
++// narrow fopen / std::filesystem constructors read them in the ANSI code page instead, so a
++// Japanese or Chinese directory name opens the wrong file. Convert to wide first.
++#ifdef _WIN32
++inline std::wstring utf8_to_wide(const std::string & utf8) {
++    if (utf8.empty()) {
++        return std::wstring();
++    }
++    const int length = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int) utf8.size(), nullptr, 0);
++    std::wstring wide(length > 0 ? (size_t) length : 0, L'\0');
++    if (length > 0) {
++        MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int) utf8.size(), &wide[0], length);
++    }
++    return wide;
++}
++
++inline std::filesystem::path utf8_fs_path(const std::string & utf8) {
++    return std::filesystem::path(utf8_to_wide(utf8));
++}
++
++inline FILE * utf8_fopen(const std::string & utf8, const char * mode) {
++    return _wfopen(utf8_to_wide(utf8).c_str(), utf8_to_wide(mode).c_str());
++}
++#else
++inline std::filesystem::path utf8_fs_path(const std::string & utf8) {
++    return std::filesystem::path(utf8);
++}
++
++inline FILE * utf8_fopen(const std::string & utf8, const char * mode) {
++    return fopen(utf8.c_str(), mode);
++}
++#endif
++
++} // namespace qwen3_tts
 diff --git a/src/env_flag.h b/src/env_flag.h
 new file mode 100644
 index 0000000..015f29c
@@ -50,6 +201,25 @@ index 0000000..015f29c
 +}
 +
 +} // namespace qwen3_tts
+diff --git a/src/gguf_loader.cpp b/src/gguf_loader.cpp
+index 4ef4bf4..c840f93 100644
+--- a/src/gguf_loader.cpp
++++ b/src/gguf_loader.cpp
+@@ -1,4 +1,5 @@
+ #include "gguf_loader.h"
++#include "common/utf8_path.h"
+ 
+ #include <cstdio>
+ #include <cstring>
+@@ -348,7 +349,7 @@ bool load_tensor_data_from_file(
+     ggml_backend_buffer_set_usage(buffer, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+     
+     // Open file for reading tensor data
+-    FILE * f = fopen(path.c_str(), "rb");
++    FILE * f = utf8_fopen(path, "rb");
+     if (!f) {
+         error_msg = "Failed to open file for reading: " + path;
+         ggml_backend_free(backend);
 diff --git a/src/main.cpp b/src/main.cpp
 index d773ad8..76ba5a5 100644
 --- a/src/main.cpp
@@ -143,18 +313,153 @@ index d773ad8..76ba5a5 100644
                      *ttfa_ms_out = monotonic_time_ms() - request_start_ms;
                  }
 diff --git a/src/pipeline/pipeline_models.cpp b/src/pipeline/pipeline_models.cpp
-index 2b839da..a7dae8b 100644
+index 2b839da..52a0b04 100644
 --- a/src/pipeline/pipeline_models.cpp
 +++ b/src/pipeline/pipeline_models.cpp
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
  #include "qwen3_tts.h"
++#include "common/utf8_path.h"
  #include "gguf_loader.h"
  #include "pipeline/pipeline_internal.h"
 +#include "env_flag.h"
  
  #include <algorithm>
  #include <cctype>
-@@ -304,7 +305,8 @@ bool Qwen3TTS::load_models(const std::string & model_dir,
+@@ -60,12 +62,12 @@ std::string choose_tts_model_path(const std::string & model_dir,
+     std::string tts_model_path;
+     tts_candidates.clear();
+ 
+-    if (fs::exists(model_dir) && fs::is_directory(model_dir)) {
+-        for (const auto & entry : fs::directory_iterator(model_dir)) {
++    if (fs::exists(utf8_fs_path(model_dir)) && fs::is_directory(utf8_fs_path(model_dir))) {
++        for (const auto & entry : fs::directory_iterator(utf8_fs_path(model_dir))) {
+             if (!entry.is_regular_file()) continue;
+-            std::string filename = entry.path().filename().string();
++            std::string filename = entry.path().filename().u8string();
+             std::string filename_lower = to_lower(filename);
+-            std::string ext = to_lower(entry.path().extension().string());
++            std::string ext = to_lower(entry.path().extension().u8string());
+ 
+             if (ext == ".gguf" &&
+                 filename_lower.find("tokenizer") == std::string::npos &&
+@@ -74,10 +76,10 @@ std::string choose_tts_model_path(const std::string & model_dir,
+                 tts_candidates.push_back(entry.path());
+                 if (!model_name.empty()) {
+                     if (filename.find(model_name) != std::string::npos) {
+-                        tts_model_path = entry.path().string();
++                        tts_model_path = entry.path().u8string();
+                     }
+                 } else if (tts_model_path.empty() || filename.find("0.6b") != std::string::npos) {
+-                    tts_model_path = entry.path().string();
++                    tts_model_path = entry.path().u8string();
+                 }
+             }
+         }
+@@ -97,11 +99,11 @@ std::string choose_tts_model_path(const std::string & model_dir,
+ std::string choose_tokenizer_model_path(const std::string & model_dir,
+                                         const std::string & tts_model_path) {
+     std::vector<fs::path> tokenizer_candidates;
+-    if (fs::exists(model_dir) && fs::is_directory(model_dir)) {
+-        for (const auto & entry : fs::directory_iterator(model_dir)) {
++    if (fs::exists(utf8_fs_path(model_dir)) && fs::is_directory(utf8_fs_path(model_dir))) {
++        for (const auto & entry : fs::directory_iterator(utf8_fs_path(model_dir))) {
+             if (!entry.is_regular_file()) continue;
+-            std::string filename_lower = to_lower(entry.path().filename().string());
+-            std::string ext = to_lower(entry.path().extension().string());
++            std::string filename_lower = to_lower(entry.path().filename().u8string());
++            std::string ext = to_lower(entry.path().extension().u8string());
+             if (ext == ".gguf" && filename_lower.find("tokenizer") != std::string::npos) {
+                 tokenizer_candidates.push_back(entry.path());
+             }
+@@ -116,24 +118,24 @@ std::string choose_tokenizer_model_path(const std::string & model_dir,
+     };
+     for (const auto & preferred : preferred_exact) {
+         for (const auto & path : tokenizer_candidates) {
+-            if (to_lower(path.filename().string()) == preferred) {
+-                return path.string();
++            if (to_lower(path.filename().u8string()) == preferred) {
++                return path.u8string();
+             }
+         }
+     }
+ 
+     const bool prefer_qwen_talker =
+-        to_lower(fs::path(tts_model_path).filename().string()).find("qwen-talker") != std::string::npos;
++        to_lower(utf8_fs_path(tts_model_path).filename().u8string()).find("qwen-talker") != std::string::npos;
+     if (prefer_qwen_talker) {
+         for (const auto & path : tokenizer_candidates) {
+-            if (to_lower(path.filename().string()).find("qwen-tokenizer-12hz") != std::string::npos) {
+-                return path.string();
++            if (to_lower(path.filename().u8string()).find("qwen-tokenizer-12hz") != std::string::npos) {
++                return path.u8string();
+             }
+         }
+     }
+ 
+     if (!tokenizer_candidates.empty()) {
+-        return tokenizer_candidates.front().string();
++        return tokenizer_candidates.front().u8string();
+     }
+     return model_dir + "/qwen-tokenizer-12hz-Q8_0.gguf";
+ }
+@@ -150,14 +152,14 @@ std::string find_speaker_encoder_model(const std::string & tts_model_path,
+     std::string best_path;
+ 
+     for (const auto & candidate : tts_candidates) {
+-        const std::string filename = to_lower(candidate.filename().string());
++        const std::string filename = to_lower(candidate.filename().u8string());
+         if (filename.find("tokenizer") != std::string::npos ||
+             filename.find(size_marker) == std::string::npos ||
+             filename.find("base") == std::string::npos) {
+             continue;
+         }
+ 
+-        const std::string path = candidate.string();
++        const std::string path = candidate.u8string();
+         if (!has_speaker_encoder_tensors(path)) {
+             continue;
+         }
+@@ -203,13 +205,13 @@ bool Qwen3TTS::load_models(const std::string & model_dir,
+     std::string tts_model_path;
+     std::vector<fs::path> tts_candidates;
+ 
+-    if (fs::exists(model_dir) && fs::is_directory(model_dir)) {
+-        for (const auto & entry : fs::directory_iterator(model_dir)) {
++    if (fs::exists(utf8_fs_path(model_dir)) && fs::is_directory(utf8_fs_path(model_dir))) {
++        for (const auto & entry : fs::directory_iterator(utf8_fs_path(model_dir))) {
+             if (!entry.is_regular_file()) continue;
+-            std::string filename = entry.path().filename().string();
++            std::string filename = entry.path().filename().u8string();
+             std::string filename_lower = filename;
+             std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+-            std::string ext = entry.path().extension().string();
++            std::string ext = entry.path().extension().u8string();
+             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+ 
+             if (ext == ".gguf") {
+@@ -220,10 +222,10 @@ bool Qwen3TTS::load_models(const std::string & model_dir,
+                     tts_candidates.push_back(entry.path());
+                     if (!model_name.empty()) {
+                         if (filename.find(model_name) != std::string::npos) {
+-                            tts_model_path = entry.path().string();
++                            tts_model_path = entry.path().u8string();
+                         }
+                     } else if (tts_model_path.empty() || filename.find("0.6b") != std::string::npos) {
+-                        tts_model_path = entry.path().string();
++                        tts_model_path = entry.path().u8string();
+                     }
+                 }
+             }
+@@ -240,7 +242,7 @@ bool Qwen3TTS::load_models(const std::string & model_dir,
+     const std::string tokenizer_model_path = tokenizer_model_override.empty()
+         ? choose_tokenizer_model_path(model_dir, tts_model_path)
+         : tokenizer_model_override;
+-    if (!fs::exists(tokenizer_model_path)) {
++    if (!fs::exists(utf8_fs_path(tokenizer_model_path))) {
+         error_msg_ = "Tokenizer/codec model not found: " + tokenizer_model_path;
+         return false;
+     }
+@@ -304,7 +306,8 @@ bool Qwen3TTS::load_models(const std::string & model_dir,
      }
      log_memory_usage("load/after-transformer");
  
@@ -164,6 +469,15 @@ index 2b839da..a7dae8b 100644
          fprintf(stderr, "Loading vocoder from %s...\n", tokenizer_model_path.c_str());
          int64_t t_decoder_start = get_time_ms();
          if (!audio_decoder_.load_model(tokenizer_model_path)) {
+@@ -407,7 +410,7 @@ bool Qwen3TTS::load_icl_prompt_encoder_only(const std::string & model_dir,
+     tokenizer_model_path_ = tokenizer_model_override.empty()
+         ? choose_tokenizer_model_path(model_dir, tts_model_path_)
+         : tokenizer_model_override;
+-    if (!fs::exists(tokenizer_model_path_)) {
++    if (!fs::exists(utf8_fs_path(tokenizer_model_path_))) {
+         error_msg_ = "Tokenizer/codec model not found: " + tokenizer_model_path_;
+         return false;
+     }
 diff --git a/src/pipeline/pipeline_synthesize.cpp b/src/pipeline/pipeline_synthesize.cpp
 index a73b00a..34aad16 100644
 --- a/src/pipeline/pipeline_synthesize.cpp
@@ -192,7 +506,7 @@ index 4829541..dff1be1 100644
      std::string dump_generated_codes_path;
      std::string dump_decoder_codes_path;
 diff --git a/src/qwen3_tts_c.cpp b/src/qwen3_tts_c.cpp
-index e720f52..cc865f3 100644
+index e720f52..312e5c1 100644
 --- a/src/qwen3_tts_c.cpp
 +++ b/src/qwen3_tts_c.cpp
 @@ -1,8 +1,10 @@
@@ -215,7 +529,7 @@ index e720f52..cc865f3 100644
      if (params.vocoder_left_context_sec > 0.0f) {
          p.vocoder_left_context_sec = params.vocoder_left_context_sec;
      }
-@@ -59,6 +63,70 @@ static qwen3_tts::tts_params convert_params(qwen3_tts_params_t params) {
+@@ -59,6 +63,124 @@ static qwen3_tts::tts_params convert_params(qwen3_tts_params_t params) {
      return p;
  }
  
@@ -225,6 +539,66 @@ index e720f52..cc865f3 100644
 +    sizes[1] = sizeof(qwen3_tts_streaming_params_t);
 +    sizes[2] = sizeof(qwen3_tts_audio_chunk_t);
 +    sizes[3] = sizeof(qwen3_tts_result_t);
++}
++
++static int32_t copy_abi_table(const int32_t* table, int32_t count, int32_t* out, int32_t capacity) {
++    if (out) {
++        for (int32_t i = 0; i < count && i < capacity; ++i) {
++            out[i] = table[i];
++        }
++    }
++    return count;
++}
++
++// Field list shared by the layout and the type table: keep in declaration order.
++#define QWEN3_TTS_ABI_FIELDS(X)                                        \
++    X(qwen3_tts_params_t, max_audio_tokens)                            \
++    X(qwen3_tts_params_t, temperature)                                 \
++    X(qwen3_tts_params_t, top_p)                                       \
++    X(qwen3_tts_params_t, top_k)                                       \
++    X(qwen3_tts_params_t, n_threads)                                   \
++    X(qwen3_tts_params_t, print_progress)                              \
++    X(qwen3_tts_params_t, print_timing)                                \
++    X(qwen3_tts_params_t, repetition_penalty)                          \
++    X(qwen3_tts_params_t, language_id)                                 \
++    X(qwen3_tts_params_t, instruction)                                 \
++    X(qwen3_tts_params_t, speaker)                                     \
++    X(qwen3_tts_params_t, vocoder_left_context_sec)                    \
++    X(qwen3_tts_params_t, seed)                                        \
++    X(qwen3_tts_params_t, full_text_input)                             \
++    X(qwen3_tts_streaming_params_t, generation)                        \
++    X(qwen3_tts_streaming_params_t, chunk_sec)                         \
++    X(qwen3_tts_streaming_params_t, left_context_sec)                  \
++    X(qwen3_tts_streaming_params_t, collect_audio)                     \
++    X(qwen3_tts_audio_chunk_t, samples)                                \
++    X(qwen3_tts_audio_chunk_t, n_samples)                              \
++    X(qwen3_tts_audio_chunk_t, sample_rate)                            \
++    X(qwen3_tts_audio_chunk_t, start_sample)                           \
++    X(qwen3_tts_audio_chunk_t, end_sample)                             \
++    X(qwen3_tts_audio_chunk_t, start_frame)                            \
++    X(qwen3_tts_audio_chunk_t, end_frame)                              \
++    X(qwen3_tts_audio_chunk_t, start_text_byte)                        \
++    X(qwen3_tts_audio_chunk_t, end_text_byte)                          \
++    X(qwen3_tts_audio_chunk_t, text_alignment_kind)                    \
++    X(qwen3_tts_audio_chunk_t, confidence)                             \
++    X(qwen3_tts_result_t, audio)                                       \
++    X(qwen3_tts_result_t, audio_len)                                   \
++    X(qwen3_tts_result_t, sample_rate)                                 \
++    X(qwen3_tts_result_t, success)                                     \
++    X(qwen3_tts_result_t, error_msg)                                   \
++    X(qwen3_tts_result_t, t_total_ms)
++
++template <typename T> struct abi_type_code { static const int32_t value = 5; };  // nested struct
++template <> struct abi_type_code<int32_t> { static const int32_t value = 1; };
++template <> struct abi_type_code<int64_t> { static const int32_t value = 2; };
++template <> struct abi_type_code<float> { static const int32_t value = 3; };
++template <typename T> struct abi_type_code<T*> { static const int32_t value = 4; };
++
++int32_t qwen3_tts_bridge_abi_types(int32_t* out, int32_t capacity) {
++#define QWEN3_TTS_TYPE(type, field) abi_type_code<decltype(type::field)>::value,
++    static const int32_t types[] = { QWEN3_TTS_ABI_FIELDS(QWEN3_TTS_TYPE) };
++#undef QWEN3_TTS_TYPE
++    return copy_abi_table(types, (int32_t) (sizeof(types) / sizeof(types[0])), out, capacity);
 +}
 +
 +int32_t qwen3_tts_bridge_abi_layout(int32_t* out, int32_t capacity) {
@@ -274,19 +648,13 @@ index e720f52..cc865f3 100644
 +        QWEN3_TTS_OFFSET(qwen3_tts_result_t, t_total_ms),
 +    };
 +#undef QWEN3_TTS_OFFSET
-+    const int32_t count = (int32_t) (sizeof(layout) / sizeof(layout[0]));
-+    if (out) {
-+        for (int32_t i = 0; i < count && i < capacity; ++i) {
-+            out[i] = layout[i];
-+        }
-+    }
-+    return count;
++    return copy_abi_table(layout, (int32_t) (sizeof(layout) / sizeof(layout[0])), out, capacity);
 +}
 +
  static qwen3_tts::tts_streaming_params convert_streaming_params(qwen3_tts_streaming_params_t params) {
      qwen3_tts::tts_streaming_params p;
      p.generation = convert_params(params.generation);
-@@ -95,6 +163,34 @@ static qwen3_tts_result_t make_error_result(const char * message) {
+@@ -95,6 +217,34 @@ static qwen3_tts_result_t make_error_result(const char * message) {
      return res;
  }
  
@@ -321,7 +689,7 @@ index e720f52..cc865f3 100644
  static bool load_icl_prompt_params(const char * icl_prompt_file,
                                     qwen3_tts::icl_prompt & prompt,
                                     qwen3_tts::tts_params & params,
-@@ -125,8 +221,20 @@ static qwen3_tts_audio_chunk_t convert_audio_chunk(const qwen3_tts::tts_audio_ch
+@@ -125,8 +275,20 @@ static qwen3_tts_audio_chunk_t convert_audio_chunk(const qwen3_tts::tts_audio_ch
      return out;
  }
  
@@ -343,7 +711,7 @@ index e720f52..cc865f3 100644
  }
  
  void qwen3_tts_free(qwen3_tts_context_t* ctx) {
-@@ -134,17 +242,21 @@ void qwen3_tts_free(qwen3_tts_context_t* ctx) {
+@@ -134,17 +296,21 @@ void qwen3_tts_free(qwen3_tts_context_t* ctx) {
  }
  
  int32_t qwen3_tts_set_backend_preference(int32_t preference) {
@@ -373,7 +741,7 @@ index e720f52..cc865f3 100644
  }
  
  int32_t qwen3_tts_get_cpu_threads() {
-@@ -156,8 +268,12 @@ int32_t qwen3_tts_get_compiled_backend_mask() {
+@@ -156,8 +322,12 @@ int32_t qwen3_tts_get_compiled_backend_mask() {
  }
  
  char* qwen3_tts_get_active_backend_name() {
@@ -388,7 +756,7 @@ index e720f52..cc865f3 100644
  }
  
  int32_t qwen3_tts_load_models(qwen3_tts_context_t* ctx, const char* model_dir) {
-@@ -170,7 +286,9 @@ int32_t qwen3_tts_load_models_with_name(
+@@ -170,7 +340,9 @@ int32_t qwen3_tts_load_models_with_name(
      const char* model_name
  ) {
      if (!ctx || !model_dir) return 0;
@@ -399,7 +767,7 @@ index e720f52..cc865f3 100644
  }
  
  int32_t qwen3_tts_load_icl_prompt_encoder(
-@@ -186,38 +304,36 @@ int32_t qwen3_tts_load_icl_prompt_encoder_with_name(
+@@ -186,38 +358,36 @@ int32_t qwen3_tts_load_icl_prompt_encoder_with_name(
      const char* model_name
  ) {
      if (!ctx || !model_dir) return 0;
@@ -454,7 +822,7 @@ index e720f52..cc865f3 100644
  }
  
  qwen3_tts_result_t qwen3_tts_synthesize_with_speaker_embedding(
-@@ -227,22 +343,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_speaker_embedding(
+@@ -227,22 +397,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_speaker_embedding(
      qwen3_tts_params_t params
  ) {
      if (!ctx || !text || !speaker_embedding_file) {
@@ -462,8 +830,7 @@ index e720f52..cc865f3 100644
 -        res.success = 0;
 -        res.error_msg = strdup("Invalid context, text, or speaker embedding file");
 -        return res;
-+        return make_error_result("Invalid context, text, or speaker embedding file");
-     }
+-    }
 -
 -    std::vector<float> speaker_embedding;
 -    if (!qwen3_tts::load_speaker_embedding_file(speaker_embedding_file, speaker_embedding)) {
@@ -471,7 +838,8 @@ index e720f52..cc865f3 100644
 -        res.success = 0;
 -        res.error_msg = strdup("Failed to load speaker embedding file");
 -        return res;
--    }
++        return make_error_result("Invalid context, text, or speaker embedding file");
+     }
 -
 -    auto result = ctx->tts.synthesize_with_speaker_embedding(text, speaker_embedding, convert_params(params));
 -    return convert_result(result);
@@ -486,7 +854,7 @@ index e720f52..cc865f3 100644
  }
  
  qwen3_tts_result_t qwen3_tts_synthesize_with_icl_prompt(
-@@ -254,16 +364,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_icl_prompt(
+@@ -254,16 +418,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_icl_prompt(
      if (!ctx || !text || !icl_prompt_file) {
          return make_error_result("Invalid context, text, or ICL prompt file");
      }
@@ -513,7 +881,7 @@ index e720f52..cc865f3 100644
  }
  
  qwen3_tts_result_t qwen3_tts_synthesize_streaming(
-@@ -274,19 +384,12 @@ qwen3_tts_result_t qwen3_tts_synthesize_streaming(
+@@ -274,19 +438,12 @@ qwen3_tts_result_t qwen3_tts_synthesize_streaming(
      void* user_data
  ) {
      if (!ctx || !text || !callback) {
@@ -538,7 +906,7 @@ index e720f52..cc865f3 100644
  }
  
  qwen3_tts_result_t qwen3_tts_synthesize_with_voice_streaming(
-@@ -298,20 +401,12 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_voice_streaming(
+@@ -298,20 +455,12 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_voice_streaming(
      void* user_data
  ) {
      if (!ctx || !text || !reference_audio || !callback) {
@@ -564,7 +932,7 @@ index e720f52..cc865f3 100644
  }
  
  qwen3_tts_result_t qwen3_tts_synthesize_with_speaker_embedding_streaming(
-@@ -323,28 +418,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_speaker_embedding_streaming(
+@@ -323,28 +472,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_speaker_embedding_streaming(
      void* user_data
  ) {
      if (!ctx || !text || !speaker_embedding_file || !callback) {
@@ -572,8 +940,7 @@ index e720f52..cc865f3 100644
 -        res.success = 0;
 -        res.error_msg = strdup("Invalid context, text, speaker embedding file, or streaming callback");
 -        return res;
-+        return make_error_result("Invalid context, text, speaker embedding file, or streaming callback");
-     }
+-    }
 -
 -    std::vector<float> speaker_embedding;
 -    if (!qwen3_tts::load_speaker_embedding_file(speaker_embedding_file, speaker_embedding)) {
@@ -581,7 +948,8 @@ index e720f52..cc865f3 100644
 -        res.success = 0;
 -        res.error_msg = strdup("Failed to load speaker embedding file");
 -        return res;
--    }
++        return make_error_result("Invalid context, text, speaker embedding file, or streaming callback");
+     }
 -
 -    qwen3_tts::tts_audio_chunk_callback_t cb =
 -        [callback, user_data](const qwen3_tts::tts_audio_chunk & chunk) {
@@ -602,7 +970,7 @@ index e720f52..cc865f3 100644
  }
  
  qwen3_tts_result_t qwen3_tts_synthesize_with_icl_prompt_streaming(
-@@ -358,22 +441,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_icl_prompt_streaming(
+@@ -358,22 +495,16 @@ qwen3_tts_result_t qwen3_tts_synthesize_with_icl_prompt_streaming(
      if (!ctx || !text || !icl_prompt_file || !callback) {
          return make_error_result("Invalid context, text, ICL prompt file, or streaming callback");
      }
@@ -635,7 +1003,7 @@ index e720f52..cc865f3 100644
  }
  
  int32_t qwen3_tts_extract_speaker_embedding(
-@@ -386,18 +463,18 @@ int32_t qwen3_tts_extract_speaker_embedding(
+@@ -386,18 +517,18 @@ int32_t qwen3_tts_extract_speaker_embedding(
          return 0;
      }
      clear_last_error(ctx);
@@ -666,7 +1034,7 @@ index e720f52..cc865f3 100644
  }
  
  int32_t qwen3_tts_extract_icl_prompt(
-@@ -411,18 +488,18 @@ int32_t qwen3_tts_extract_icl_prompt(
+@@ -411,18 +542,18 @@ int32_t qwen3_tts_extract_icl_prompt(
          return 0;
      }
      clear_last_error(ctx);
@@ -697,7 +1065,7 @@ index e720f52..cc865f3 100644
  }
  
  qwen3_tts_model_capabilities_t qwen3_tts_get_model_capabilities(qwen3_tts_context_t* ctx) {
-@@ -431,15 +508,20 @@ qwen3_tts_model_capabilities_t qwen3_tts_get_model_capabilities(qwen3_tts_contex
+@@ -431,15 +562,20 @@ qwen3_tts_model_capabilities_t qwen3_tts_get_model_capabilities(qwen3_tts_contex
      if (!ctx) {
          return out;
      }
@@ -727,7 +1095,7 @@ index e720f52..cc865f3 100644
      return out;
  }
  
-@@ -447,17 +529,20 @@ char* qwen3_tts_get_available_speakers(qwen3_tts_context_t* ctx) {
+@@ -447,17 +583,20 @@ char* qwen3_tts_get_available_speakers(qwen3_tts_context_t* ctx) {
      if (!ctx) {
          return strdup("");
      }
@@ -757,7 +1125,7 @@ index e720f52..cc865f3 100644
  }
  
  char* qwen3_tts_get_last_error(qwen3_tts_context_t* ctx) {
-@@ -480,14 +565,14 @@ void qwen3_tts_free_result(qwen3_tts_result_t result) {
+@@ -480,14 +619,14 @@ void qwen3_tts_free_result(qwen3_tts_result_t result) {
  }
  
  void qwen3_tts_set_progress_callback(
@@ -776,7 +1144,7 @@ index e720f52..cc865f3 100644
          ctx->tts.set_progress_callback([ctx](int tokens, int max) {
              ctx->progress_callback(tokens, max, ctx->user_data);
 diff --git a/src/qwen3_tts_c.h b/src/qwen3_tts_c.h
-index 2300182..0d35884 100644
+index 2300182..572a052 100644
 --- a/src/qwen3_tts_c.h
 +++ b/src/qwen3_tts_c.h
 @@ -35,6 +35,9 @@ typedef struct {
@@ -789,7 +1157,7 @@ index 2300182..0d35884 100644
  } qwen3_tts_params_t;
  
  typedef struct {
-@@ -105,6 +108,13 @@ typedef int32_t (*qwen3_tts_audio_chunk_callback)(
+@@ -105,6 +108,18 @@ typedef int32_t (*qwen3_tts_audio_chunk_callback)(
  );
  
  QWEN3_TTS_API qwen3_tts_context_t* qwen3_tts_init();
@@ -798,8 +1166,13 @@ index 2300182..0d35884 100644
 +// Full layout of the same four structs: for each struct its size followed by the
 +// offset of every field in declaration order. Writes up to `capacity` values into
 +// `out` and returns how many values the layout has; a binding compares the list with
-+// its own so a reordered or retyped field is caught at load time, not as bad memory.
++// its own so a reordered, added or removed field is caught at load time, not as bad
++// memory. A field changed to another type of the same width keeps the same layout;
++// qwen3_tts_bridge_abi_types covers that.
 +QWEN3_TTS_API int32_t qwen3_tts_bridge_abi_layout(int32_t* out, int32_t capacity);
++// Type code of every field of the same four structs, in the same order (no sizes):
++// 1 int32, 2 int64, 3 float, 4 pointer, 5 nested struct. Same calling convention.
++QWEN3_TTS_API int32_t qwen3_tts_bridge_abi_types(int32_t* out, int32_t capacity);
  QWEN3_TTS_API void qwen3_tts_free(qwen3_tts_context_t* ctx);
  QWEN3_TTS_API int32_t qwen3_tts_set_backend_preference(int32_t preference);
  QWEN3_TTS_API int32_t qwen3_tts_set_cpu_threads(int32_t n_threads);
@@ -1082,10 +1455,12 @@ index c29fdff..4ecdc7e 100644
      static struct ggml_cgraph * build_prefill_forward_graph(TTSTransformer & self, int32_t n_tokens, int32_t n_past);
      static struct ggml_cgraph * build_step_graph(TTSTransformer & self, int32_t n_past,
 diff --git a/src/transformer/transformer_loader_tensors.cpp b/src/transformer/transformer_loader_tensors.cpp
-index e5c21ad..be21c01 100644
+index e5c21ad..e040f43 100644
 --- a/src/transformer/transformer_loader_tensors.cpp
 +++ b/src/transformer/transformer_loader_tensors.cpp
-@@ -2,8 +2,12 @@
+@@ -1,9 +1,14 @@
+ #include "tts_transformer.h"
++#include "common/utf8_path.h"
  #include "transformer/transformer_state_internal.h"
  #include "gguf_loader.h"
  #include "transformer/transformer_internal.h"
@@ -1098,7 +1473,7 @@ index e5c21ad..be21c01 100644
  #include <cstring>
  #include <vector>
  
-@@ -38,6 +42,22 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+@@ -38,6 +43,22 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
          return false;
      }
  
@@ -1121,7 +1496,7 @@ index e5c21ad..be21c01 100644
      impl->model.layers.resize(cfg.n_layers);
      impl->model.code_pred_layers.resize(cfg.code_pred_layers);
      impl->model.code_pred_embd.resize(cfg.n_codebooks - 1);
-@@ -226,7 +246,17 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+@@ -226,7 +247,17 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
              continue;
          }
  
@@ -1140,7 +1515,7 @@ index e5c21ad..be21c01 100644
          if (!tensor) {
              error_msg = "Failed to create tensor: " + std::string(name);
              return false;
-@@ -334,6 +364,24 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+@@ -334,6 +365,24 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
              }
              ggml_format_name(layer.attn_qkv,
                               "code_pred.blk.%d.attn_qkv.packed", il);
@@ -1165,7 +1540,7 @@ index e5c21ad..be21c01 100644
          }
      }
  
-@@ -365,6 +413,24 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
+@@ -365,6 +414,24 @@ bool transformer_internal::ops::create_tensors(TTSTransformer & self, struct ggu
                  return false;
              }
              ggml_format_name(layer.attn_qkv, "talker.blk.%d.attn_qkv.packed", il);
@@ -1190,25 +1565,14 @@ index e5c21ad..be21c01 100644
          }
      }
  
-@@ -385,6 +451,67 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
+@@ -385,8 +452,58 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
          release_preferred_backend(backend);
          return false;
      }
 +    if (impl->model.ctx_cpu) {
-+        bool map_text_embd = env_flag_on("QWEN3_TTS_TEXT_EMBD_MMAP");
-+#ifdef _WIN32
-+        // The legacy loader opens the other tensors with ANSI fopen; a non-ASCII path
-+        // could name a different file under the two encodings. Keep the table on the
-+        // heap in that case (same PCM, ~0.6 GB more RAM) instead of refusing to load.
-+        for (unsigned char c : path) {
-+            if (c >= 128 && map_text_embd) {
-+                fprintf(stderr, "  XW model path is not ASCII; text_embd read-only mapping disabled, "
-+                                "loading the table into RAM instead\n");
-+                map_text_embd = false;
-+                break;
-+            }
-+        }
-+#endif
++        // All model files are opened through utf8_fopen / CreateFileW, so a non-ASCII path
++        // works for the mapped table and the legacy loader alike.
++        const bool map_text_embd = env_flag_on("QWEN3_TTS_TEXT_EMBD_MMAP");
 +        if (map_text_embd) {
 +            const int64_t index = gguf_find_tensor(ctx, "talker.text_embd.weight");
 +            struct ggml_tensor * tensor = impl->model.text_embd;
@@ -1256,9 +1620,12 @@ index e5c21ad..be21c01 100644
 +                ggml_backend_buffer_get_size(impl->model.buffer));
 +    }
  
-     FILE * f = fopen(path.c_str(), "rb");
+-    FILE * f = fopen(path.c_str(), "rb");
++    FILE * f = utf8_fopen(path, "rb");
      if (!f) {
-@@ -409,6 +536,12 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
+         error_msg = "Failed to open file for reading: " + path;
+         release_preferred_backend(backend);
+@@ -409,6 +526,12 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
          struct ggml_tensor * tensor = it->second;
          size_t nbytes = ggml_nbytes(tensor);
  
@@ -1271,7 +1638,7 @@ index e5c21ad..be21c01 100644
          read_buf.resize(nbytes);
  
  #ifdef _WIN32
-@@ -429,7 +562,9 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
+@@ -429,7 +552,9 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
              return false;
          }
  

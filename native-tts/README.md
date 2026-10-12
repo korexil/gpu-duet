@@ -14,9 +14,9 @@
 全部打开时，常驻显存约 3.7～3.9 GB。在测试过的种子、文本和参数下，输出 PCM 与关闭这些开关时**逐字节相同**；这只说明测过的配置等价，不保证所有输入。
 `tts-service/server.py` 启动时会默认打开这些开关。所有开关的取值规则一样：`1`、`true`、`on`、`yes`（不分大小写）算开，其他都算关。
 
-模型路径含非 ASCII 字符（日文用户目录很常见）时，只读映射这一项会自动关掉、改成把表读进内存（多占约 0.6 GB 内存，PCM 不变），stderr 里会有一行提示；原因是上游加载其余张量仍用 ANSI `fopen`，同一个路径按两种编码打开可能不是同一个文件。
+模型、声音提示和参考音的路径一律按 UTF-8 处理：Windows 上先转成宽字符再用 `_wfopen` / `CreateFileW` / `std::filesystem` 打开（`src/common/utf8_path.h`）。上游原来用 ANSI `fopen`，日文、中文目录名会打开不存在的文件；现在含非 ASCII 的路径和只读映射都能正常用。
 
-`qwen3_tts_bridge_abi_sizes` 仍然保留；只有它、没有 `qwen3_tts_bridge_abi_layout` 的旧库也能加载，但绑定会打一条「字段布局未校验」的警告。
+ABI 校验分三层：`qwen3_tts_bridge_abi_layout`（结构体大小 + 每个字段的偏移，抓字段重排、增删）、`qwen3_tts_bridge_abi_types`（每个字段的类型码，抓同宽度换类型，比如 `int32` 改 `float`）、`qwen3_tts_bridge_abi_sizes`（只有大小，保留给旧库）。缺后两者的旧库也能加载，绑定会打一条警告说明哪一层没校验到。
 
 ## 1. 引擎：下载预编译包（Windows x64）
 

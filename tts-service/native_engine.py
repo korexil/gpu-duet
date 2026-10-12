@@ -61,18 +61,43 @@ def expected_layout():
     return layout
 
 
+TYPE_CODES = {C.c_int32: 1, C.c_int64: 2, C.c_float: 3}
+
+
+def expected_types():
+    """Mirror of qwen3_tts_bridge_abi_types: one code per field (1 int32, 2 int64, 3 float,
+    4 pointer, 5 nested struct). Catches a field retyped to another type of the same width,
+    which leaves the layout unchanged."""
+    codes = []
+    for struct in ABI_STRUCTS:
+        for _, kind in struct._fields_:
+            codes.append(TYPE_CODES.get(kind, 4 if kind is C.c_char_p or isinstance(kind, type) and issubclass(kind, C._Pointer)
+                                        else 5))
+    return codes
+
+
+def _read_table(lib, name, expected):
+    function = getattr(lib, name)
+    function.argtypes = [C.POINTER(C.c_int32), C.c_int32]
+    function.restype = C.c_int32
+    values = (C.c_int32 * len(expected))()
+    count = function(values, len(expected))
+    actual = list(values)[:min(count, len(expected))]
+    if count != len(expected) or actual != expected:
+        raise RuntimeError(f'ABI {name} mismatch: library {actual} ({count} values) vs binding {expected}')
+
+
 def check_abi(lib):
-    """Refuse a library whose structs differ from this binding. Libraries built before
-    the layout export only expose the sizes; those still load, with a warning."""
-    expected = expected_layout()
+    """Refuse a library whose structs differ from this binding: field offsets and sizes,
+    then field types. Older libraries expose less (layout only, or only the sizes);
+    those still load, with a warning saying what stayed unverified."""
     if hasattr(lib, 'qwen3_tts_bridge_abi_layout'):
-        lib.qwen3_tts_bridge_abi_layout.argtypes = [C.POINTER(C.c_int32), C.c_int32]
-        lib.qwen3_tts_bridge_abi_layout.restype = C.c_int32
-        values = (C.c_int32 * len(expected))()
-        count = lib.qwen3_tts_bridge_abi_layout(values, len(expected))
-        actual = list(values)[:min(count, len(expected))]
-        if count != len(expected) or actual != expected:
-            raise RuntimeError(f'ABI layout mismatch: library {actual} ({count} values) vs binding {expected}')
+        _read_table(lib, 'qwen3_tts_bridge_abi_layout', expected_layout())
+        if hasattr(lib, 'qwen3_tts_bridge_abi_types'):
+            _read_table(lib, 'qwen3_tts_bridge_abi_types', expected_types())
+            return 'layout+types'
+        print('warning: library predates qwen3_tts_bridge_abi_types; field offsets match but a '
+              'same-width type change would go unnoticed', file=sys.stderr)
         return 'layout'
     lib.qwen3_tts_bridge_abi_sizes.argtypes = [C.POINTER(C.c_int32)]
     sizes = (C.c_int32 * 4)()

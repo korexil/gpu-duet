@@ -4,6 +4,8 @@
 
 ## 最小接入：挂载一个文件夹
 
+两种接法都只在 `a6cd755` 上实测过（`PATCH_BASE.txt`）。挂载方式依赖上游两处内部约定：按 `type` 去 `core/providers/llm/<type>/` 找 provider，以及 `LLMProviderBase` 和 `config.logger` 的 import 路径；上游改了这些就要跟着改。CI 会检查补丁是否还能打到固定基线，并顺带对上游 `main` 试一次（只报告，不拦）。
+
 xiaozhi 按配置里的 `type` 去 `core/providers/llm/<type>/` 找 provider，所以把 `llamacpp_paced` 挂进官方镜像就能用。
 
 1. 把 [`config-examples/docker-compose.override.yml`](config-examples/docker-compose.override.yml) 放到 xiaozhi 的 `docker-compose.yml` 旁边。`GPU_DUET` 指向本仓库，默认是同级的 `gpu-duet` 文件夹。
