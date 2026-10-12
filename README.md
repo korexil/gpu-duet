@@ -219,9 +219,15 @@ tools/        device_probe · loudness_stats · turn_taking_sim · wake_test · 
 
 ## 已提交给上游的修复
 
+xiaozhi-esp32-server：
 - [#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411) FunASR 的 JSON 原样进入对话历史
 - [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) SenseVoice 日语识别结果按词带空格
 - [#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413) TTS 分句在引号内切开句子
+
+qwen3-tts.cpp：
+- [#5](https://github.com/Danmoreng/qwen3-tts.cpp/pull/5) 模型、声音提示、参考音路径按 UTF-8 打开（日文、中文目录名）
+- [#6](https://github.com/Danmoreng/qwen3-tts.cpp/pull/6) C 边界捕获异常、导出结构体 ABI 表、不依赖 JNI 的 C 桥接库
+- Q/K/V 去重和文本表放 CPU + 只读映射的分支已备好（`qkv-dedup`、`text-embd-cpu`），等前两个有回应再提
 
 ## 许可
 
