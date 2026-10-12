@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r tts-service/requirements.txt pytest
+      - run: python -m pytest tests -q
+
+  # Builds the patched C bridge CPU-only on Linux: proves the patch still applies to the
+  # pinned upstream commit, that the POSIX branches compile, and that the built library's
+  # struct layout matches the Python binding field by field.
+  native-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r tts-service/requirements.txt pytest
+      - name: Fetch upstream at the pinned commit and apply the patch
+        run: |
+          set -e
+          git clone --recursive https://github.com/Danmoreng/qwen3-tts.cpp.git upstream
+          cd upstream
+          git checkout 16bb5af
+          git submodule update --init --recursive
+          git apply --whitespace=nowarn ../native-tts/qwen3-tts-cpp-16bb5af.patch
+      - name: Build the bridge (CPU only)
+        run: |
+          set -e
+          cmake -S upstream -B build -DCMAKE_BUILD_TYPE=Release -DQWEN3_TTS_CUDA=OFF \
+            -DQWEN3_TTS_BUILD_C_BRIDGE=ON -DQWEN3_TTS_BUILD_SHARED=OFF -DQWEN3_TTS_COREML=OFF
+          cmake --build build --target qwen3_tts_bridge --parallel 4
+          find build -name 'libqwen3_tts_bridge.so' -print
+      - name: Check the ABI layout against the binding
+        run: |
+          set -e
+          export GPU_DUET_LIBRARY="$(find build -name 'libqwen3_tts_bridge.so' | head -n 1)"
+          python -m pytest tests/test_native_abi.py -q

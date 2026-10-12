@@ -11,14 +11,19 @@ DLL 会自动从 `--library` 所在目录（及其 `bin\`）和 `nvidia-cuda-run
 | 参数 | 默认 | 说明 |
 |---|---|---|
 | `--language` | `zh` | `zh en ja ko de fr es it pt ru` |
-| `--sentence-pause` | `0.9` | 每句后补齐到多少秒停顿；6 字以内的短句用 0.5 s。设成 0 就只保留模型自带的尾音 |
+| `--sentence-pause` | `0.9` | 每句后补齐到多少秒停顿；短句用 0.5 s。设成 0 就只保留模型自带的尾音 |
+| `--clause-chars` | `6` | 多少字以内算短句（服务端已去掉标点，只能按长度分；日语、中文 6 合适，拉丁字母语言要调大） |
+| `--seed` | `7` | 采样种子，同一句话每次声音完全一样；`random` 每句换一个 |
+| `--queue-timeout` | `30` | 引擎忙时第二个请求最多排队几秒，超时才回 503 |
 | `--port` | `18766` | |
 
 | 接口 | 说明 |
 |---|---|
-| `GET /health` | `{"ready": true, "busy": false, "sentence_pause": 0.9, ...}`；`busy` 供 LLM provider 轮流使用 GPU |
+| `GET /health` | `{"ready": true, "busy": false, "started": 12, "served": 12, "sentence_pause": 0.9, ...}`；`busy` 和两个单调计数供 LLM provider 轮流使用 GPU |
 | `POST /stream` | `{"text": "..."}` → chunked 原始 PCM（s16le、24 kHz、单声道，`audio/pcm`），一边合成一边返回 |
 | `POST /synthesize` | 同上，但返回完整 WAV，方便试听 |
+
+一次只合成一句。每句的音频 token 预算按长度给（每字 8 个，最少 128、最多 1024）；真撞到预算说明句尾被截掉了，stderr 会打一行 warning，`--log` 的记录里 `truncated` 为 true。
 
 接 xiaozhi 时 TTS 选 `index_stream`，`api_url` 填 `http://host.docker.internal:18766/stream`。
 

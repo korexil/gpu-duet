@@ -1,8 +1,12 @@
 """Streaming HTTP TTS service (also works as xiaozhi-esp32-server's index_stream backend).
 
-GET  /health      {"ready": true, "busy": bool, ...}   busy drives the LLM turn-taking
+GET  /health      {"ready": true, "busy": bool, "started": n, "served": n, ...}
+                  busy and the counters drive the LLM turn-taking
 POST /stream      {"text": "..."} -> chunked raw PCM, s16le 24 kHz mono (audio/pcm)
 POST /synthesize  {"text": "..."} -> audio/wav
+
+One sentence is synthesized at a time. A second request queues for up to
+--queue-timeout seconds and then gets 503; it is never run concurrently on the GPU.
 
 Example:
   python server.py --library build/qwen3_tts_bridge.dll --dll-dir build --dll-dir "%CUDA_PATH%/bin" ^
@@ -14,6 +18,7 @@ import json
 import os
 import select
 import socket
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,8 +33,9 @@ ENGINE_ENV = dict(QWEN3_TTS_LAZY_BATCH_DECODER='1', QWEN3_TTS_LOW_MEM='0', QWEN3
                   QWEN3_TTS_TEXT_EMBD_CPU='1', QWEN3_TTS_TEXT_EMBD_MMAP='1')
 
 
-def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
+def make_server(tts, leveler, port, log_path=None, host='127.0.0.1', queue_timeout=30.0):
     busy = threading.Lock()
+    counters = dict(started=0, served=0)   # monotonic; the LLM provider watches them
 
     def log(entry):
         if log_path:
@@ -47,8 +53,8 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
                 self.send_error(404)
                 return
             body = json.dumps(dict(ready=True, busy=busy.locked(), backend=tts.backend,
-                                   active_backend=tts.active_backend,
-                                   sentence_pause=leveler.sentence_pause)).encode()
+                                   active_backend=tts.active_backend, sentence_pause=leveler.sentence_pause,
+                                   **counters)).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -71,9 +77,10 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
                 self.close_connection = True
                 self.send_error(400)
                 return
-            if not busy.acquire(blocking=False):
+            if not busy.acquire(timeout=queue_timeout):
                 self.send_error(503, 'busy')
                 return
+            counters['started'] += 1
             sent, collected = False, []
 
             def emit(wave):
@@ -123,8 +130,12 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
                     self.send_header('Content-Length', str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
+                if metrics['truncated']:
+                    print(f'warning: hit the {metrics["token_budget"]}-token budget on {len(text)} chars, '
+                          f'the end of the sentence is missing: {text!r}', file=sys.stderr, flush=True)
                 log(dict(path=self.path, chars=len(text), output_samples=metrics['output_samples'],
-                         wall_seconds=metrics.get('wall_seconds'), cancelled=metrics['cancelled']))
+                         wall_seconds=metrics.get('wall_seconds'), cancelled=metrics['cancelled'],
+                         truncated=metrics['truncated'], seed=metrics['seed']))
             except (BrokenPipeError, ConnectionResetError):
                 self.close_connection = True
             except Exception as error:
@@ -133,6 +144,7 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1'):
                     self.send_error(500, 'synthesis failed')
                 self.close_connection = True
             finally:
+                counters['served'] += 1
                 busy.release()
 
     return ThreadingHTTPServer((host, port), Handler)
@@ -151,6 +163,12 @@ def default_dll_dirs(library):
     return [str(d) for d in dirs if d.is_dir()]
 
 
+def parse_seed(value):
+    if value == 'random':
+        return None
+    return int(value)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--library', required=True, help='qwen3_tts_bridge shared library')
@@ -161,6 +179,12 @@ def main():
     parser.add_argument('--language', default='zh', help='zh en ja ko de fr es it pt ru')
     parser.add_argument('--port', type=int, default=18766)
     parser.add_argument('--sentence-pause', type=float, default=0.9, help='seconds of silence after each sentence')
+    parser.add_argument('--clause-chars', type=int, default=6,
+                        help='sentences up to this many characters get the shorter clause pause')
+    parser.add_argument('--seed', type=parse_seed, default=7,
+                        help='sampling seed; the same sentence always sounds the same. "random" draws one per sentence')
+    parser.add_argument('--queue-timeout', type=float, default=30.0,
+                        help='seconds a second request waits for the engine before 503')
     parser.add_argument('--log')
     args = parser.parse_args()
     for key, value in ENGINE_ENV.items():
@@ -170,13 +194,15 @@ def main():
     from native_engine import NativeTTS
 
     tts = NativeTTS(args.library, args.models, args.icl_prompt, backend=args.backend,
-                    dll_dirs=default_dll_dirs(args.library) + args.dll_dir, language=args.language)
+                    dll_dirs=default_dll_dirs(args.library) + args.dll_dir, language=args.language, seed=args.seed)
     try:
         warm = tts.synthesize({'zh': '嗯。', 'ja': 'うん。'}.get(args.language, 'OK.'), lambda wave: None)
         if not warm['success']:
             raise RuntimeError('warmup failed')
-        server = make_server(tts, Leveler(sentence_pause=args.sentence_pause), args.port, args.log)
-        print(json.dumps(dict(ready=True, port=args.port, active_backend=tts.active_backend)), flush=True)
+        leveler = Leveler(sentence_pause=args.sentence_pause, clause_chars=args.clause_chars)
+        server = make_server(tts, leveler, args.port, args.log, queue_timeout=args.queue_timeout)
+        print(json.dumps(dict(ready=True, port=args.port, active_backend=tts.active_backend,
+                              abi_check=tts.abi_check)), flush=True)
         try:
             server.serve_forever()
         finally:

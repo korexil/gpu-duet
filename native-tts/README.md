@@ -5,14 +5,18 @@
 
 | 改动 | 开关（环境变量） | 实测收益（RTX 4060 Laptop 8 GB） |
 |---|---|---|
-| C ABI 桥接库 `qwen3_tts_bridge`，流式回调输出 PCM，`qwen3_tts_bridge_abi_sizes` 校验结构体 | CMake `-DQWEN3_TTS_BUILD_C_BRIDGE=ON` | 供 Python/ctypes 直接调用 |
+| C ABI 桥接库 `qwen3_tts_bridge`，流式回调输出 PCM；`qwen3_tts_bridge_abi_layout` 导出四个结构体的大小和每个字段的偏移，绑定加载时逐字段核对；所有导出函数在 C 边界捕获 C++ 异常，返回错误而不是让宿主进程崩溃 | CMake `-DQWEN3_TTS_BUILD_C_BRIDGE=ON` | 供 Python/ctypes 直接调用 |
 | Talker Q/K/V 只保留融合后的一份 | `QWEN3_TTS_QKV_DEDUP=1` | GPU −约 488 MiB |
 | 文本 embedding 表留在 CPU，只在 CPU 上做 get_rows | `QWEN3_TTS_TEXT_EMBD_CPU=1` | GPU −约 594 MiB |
 | 上面的 CPU 表改为只读内存映射（Windows，按行范围映射，不预读、不复制整表） | `QWEN3_TTS_TEXT_EMBD_MMAP=1` | RSS −约 594 MiB |
 | 解码器按需批处理 | `QWEN3_TTS_LAZY_BATCH_DECODER=1` | — |
 
 全部打开时，常驻显存约 3.7～3.9 GB。在测试过的种子、文本和参数下，输出 PCM 与关闭这些开关时**逐字节相同**；这只说明测过的配置等价，不保证所有输入。
-`tts-service/server.py` 启动时会默认打开这些开关。
+`tts-service/server.py` 启动时会默认打开这些开关。所有开关的取值规则一样：`1`、`true`、`on`、`yes`（不分大小写）算开，其他都算关。
+
+模型路径含非 ASCII 字符（日文用户目录很常见）时，只读映射这一项会自动关掉、改成把表读进内存（多占约 0.6 GB 内存，PCM 不变），stderr 里会有一行提示；原因是上游加载其余张量仍用 ANSI `fopen`，同一个路径按两种编码打开可能不是同一个文件。
+
+`qwen3_tts_bridge_abi_sizes` 仍然保留；只有它、没有 `qwen3_tts_bridge_abi_layout` 的旧库也能加载，但绑定会打一条「字段布局未校验」的警告。
 
 ## 1. 引擎：下载预编译包（Windows x64）
 
