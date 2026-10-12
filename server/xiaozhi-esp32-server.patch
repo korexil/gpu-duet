@@ -200,10 +200,10 @@ index 0000000..25d978d
 +    return None
 diff --git a/main/xiaozhi-server/core/providers/llm/llamacpp_paced/llamacpp_paced.py b/main/xiaozhi-server/core/providers/llm/llamacpp_paced/llamacpp_paced.py
 new file mode 100644
-index 0000000..23c8820
+index 0000000..c9bb687
 --- /dev/null
 +++ b/main/xiaozhi-server/core/providers/llm/llamacpp_paced/llamacpp_paced.py
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,156 @@
 +"""llama.cpp server provider that takes turns with a local TTS on the same GPU.
 +
 +A streaming TTS decodes frame by frame with many small synchronous kernels. Any
@@ -212,11 +212,22 @@ index 0000000..23c8820
 +leaving audible gaps. Rate-limiting the LLM did not help (RTF stayed ~1.4), but
 +together the two only need ~75% of the GPU, so this provider serializes them:
 +it generates up to a sentence end, waits while the TTS reports ``busy``, and
-+continues in the TTS's idle gaps. Measured end to end: first audio 1.6 s -> 1.06 s,
-+total playback underrun 1.47 s -> 0 on a ~50 s answer.
++continues in the TTS's idle gaps. Measured in bench/ (6 runs per cell, median,
++~80 s answers): first audio 3.20 s -> 1.83 s, playback underrun 2.27 s -> 0.
 +
 +Continuation is token-exact: ``prompt = [rendered chat template, *generated ids]``
 +keeps the KV-cache prefix identical and avoids re-tokenization drift.
++
++Hand-off: after yielding a sentence the provider polls ``voice_health_url`` until
++the TTS reports ``busy`` or its ``started`` counter advances (a sentence shorter
++than one poll would otherwise go unseen), then waits until ``busy`` clears. The
++wait for the pick-up is bounded by ``handoff_wait``: the pipeline's sentence
++splitter may merge or hold a fragment, and that must not stall the answer. If the
++splitter regularly takes longer than ``handoff_wait`` to forward a sentence, the
++two overlap on the GPU again; raise the value or shorten the splitter's buffer.
++
++Tool calling is not implemented: ``response_with_functions`` streams a plain
++answer and ignores ``functions`` (logged once). Route tools through another path.
 +
 +Config (ai_model_config / config.yaml), all optional except base_url:
 +    type: llamacpp_paced
@@ -226,6 +237,7 @@ index 0000000..23c8820
 +    temperature: 0.8, top_p: 0.95, top_k: 64
 +    chunk_tokens: 16        # tokens per /completion call
 +    turn_tokens: 48         # yield to the TTS at least this often
++    handoff_wait: 0.4       # seconds to wait for the TTS to pick a sentence up
 +    question_rest_note: ""  # appended to the user turn after a reply that ended in a question
 +"""
 +import time
@@ -239,6 +251,8 @@ index 0000000..23c8820
 +logger = setup_logging()
 +
 +SENTENCE_END = "。！？!?\n"
++POLL = 0.02
++SENTENCE_TIMEOUT = 30
 +
 +
 +class LLMProvider(LLMProviderBase):
@@ -254,32 +268,41 @@ index 0000000..23c8820
 +        }
 +        self.chunk_tokens = int(config.get("chunk_tokens", 16))
 +        self.turn_tokens = int(config.get("turn_tokens", 48))
++        self.handoff_wait = float(config.get("handoff_wait", 0.4))
 +        self.voice_health_url = config.get("voice_health_url")
 +        self.question_rest_note = config.get("question_rest_note") or ""
 +        self.client = httpx.Client(base_url=self.base_url, timeout=httpx.Timeout(60, connect=3))
 +        self.voice = httpx.Client(timeout=httpx.Timeout(1, connect=0.5))
++        self._functions_warned = False
 +
 +    def _post(self, path, body):
 +        response = self.client.post(path, json=body)
 +        response.raise_for_status()
 +        return response.json()
 +
-+    def _voice_busy(self):
++    def _voice_state(self):
++        """(busy, started) from the TTS; a failed probe reads as idle so it never blocks the answer."""
 +        try:
-+            return bool(self.voice.get(self.voice_health_url).json().get("busy"))
++            data = self.voice.get(self.voice_health_url).json()
++            return bool(data.get("busy")), int(data.get("started") or 0)
 +        except Exception:
-+            return False  # never let the probe block the answer
++            return False, 0
 +
 +    def _yield_gpu_to_voice(self):
 +        """After handing over a sentence, wait for the TTS to pick it up and finish it."""
-+        deadline = time.monotonic() + 0.4
-+        while not self._voice_busy():
++        busy, started_before = self._voice_state()
++        deadline = time.monotonic() + self.handoff_wait
++        while not busy:
 +            if time.monotonic() > deadline:
 +                return
-+            time.sleep(0.02)
-+        deadline = time.monotonic() + 30
-+        while self._voice_busy() and time.monotonic() < deadline:
-+            time.sleep(0.02)
++            time.sleep(POLL)
++            busy, started = self._voice_state()
++            if started > started_before:
++                break  # picked up, possibly already finished
++        deadline = time.monotonic() + SENTENCE_TIMEOUT
++        while busy and time.monotonic() < deadline:
++            time.sleep(POLL)
++            busy, _ = self._voice_state()
 +
 +    def _with_turn_hint(self, dialogue):
 +        """Optional: after a reply that ended in a question, append question_rest_note.
@@ -332,6 +355,9 @@ index 0000000..23c8820
 +            yield text[len(emitted):]
 +
 +    def response_with_functions(self, session_id, dialogue, functions=None, **kwargs):
++        if functions and not self._functions_warned:
++            self._functions_warned = True
++            logger.bind(tag=TAG).warning("llamacpp_paced does not support tool calling; ignoring functions")
 +        for token in self.response(session_id, dialogue, **kwargs):
 +            yield token, None
 diff --git a/main/xiaozhi-server/core/providers/tools/device_mcp/mcp_handler.py b/main/xiaozhi-server/core/providers/tools/device_mcp/mcp_handler.py

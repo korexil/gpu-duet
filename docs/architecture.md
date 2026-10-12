@@ -34,7 +34,7 @@
 
 1. 设备一直在上传音频；VAD 判断一句话说完后，SenseVoice 识别。
 2. `wakeGate`：没叫名字、也不在回应窗口内，就丢弃；叫了名字，就去掉名字只留请求，交给 LLM。
-3. `llamacpp_paced`：每次续写 16 个 token；到句末或满 48 个 token，就等 TTS 不再 `busy` 再继续。
+3. `llamacpp_paced`：每次续写 16 个 token；到句末或满 48 个 token，就等 TTS 接走这句（`busy` 变 true 或 `started` 计数加一，最多等 `handoff_wait` 0.4 s），再等它不再 `busy` 才继续。
 4. xiaozhi 的分句器按标点切句，逐句调用 TTS 的 `/stream`。
 5. `leveler.py`：切掉开头静音、定一个整句增益、限幅、补齐句尾停顿。
 6. 服务端编码成 Opus 发给设备；说完后回应窗口重新计时。窗口结束时道别一次，然后回到等待名字的状态。

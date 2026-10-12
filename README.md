@@ -103,7 +103,8 @@ sequenceDiagram
 | 文本 embedding 表留在 CPU，只在 CPU 上查表 | GPU −594 MiB |
 | 上面这张表改为只读内存映射，不预读、不复制 | RAM −594 MiB |
 | C ABI 桥接库 + 流式回调 | Python 用 ctypes 直接调用，边合成边吐 PCM |
-| 启动时比对 C 和 Python 两侧的结构体大小 | 版本对不上直接报错，不会读错内存 |
+| 启动时逐字段比对 C 和 Python 两侧的结构体（大小和每个字段的偏移） | 版本对不上直接报错，不会读错内存 |
+| 导出函数在 C 边界捕获 C++ 异常 | 引擎内部出错返回错误信息，不把 Python 进程一起带崩 |
 
 测过的配置下，PCM 与关闭这些开关时逐字节相同。显存超出 8 GB 时 Windows 驱动不报错，会把一部分挪到共享内存，解码悄悄变慢（[踩坑 #12](docs/pitfalls.md)）。
 
@@ -127,12 +128,17 @@ ESP-SR 不支持的名字（比如日语名），板载 MultiNet 用拼音近似
 
 | 细节 | 在哪 |
 |---|---|
-| TTS 同一时间只合成一句：`busy` 是非阻塞锁，并发请求直接回 503，不排队抢 GPU | `tts-service/server.py` |
+| TTS 同一时间只合成一句：第二个请求排队等（默认最多 30 s）再回 503，从不并发抢 GPU | `tts-service/server.py` |
+| `/health` 除了 `busy` 还给 `started` / `served` 计数：一句话短到两次轮询之间就合成完，LLM 也能看见它被接走了 | `tts-service/server.py` · `llamacpp_paced.py` |
+| 等 TTS 接句有上限（`handoff_wait`，默认 0.4 s）：分句器把句子攒着不发时，回答不会卡住 | `llamacpp_paced.py` |
 | 客户端断开就停止合成，不在没人听的句子上花 GPU | `tts-service/server.py` |
 | 启动时先合成一句预热，第一句不吃初始化的延迟 | `tts-service/server.py` |
+| 音频 token 预算按句长给（8 个/字，128～1024），撞到预算会在 stderr 和日志里标出来 | `tts-service/native_engine.py` |
 | 可选的提问备注加在最后一条用户消息上，前缀缓存不失效 | `llamacpp_paced.py` |
 | `wake_gate.json` 改了就生效，不用重启 | `wakeGate.py` |
 | 编译目录超过 60 字符直接报错，绕开 nvcc 的 260 字符路径限制 | `native-tts/build.ps1` |
+
+**没做的：** `llamacpp_paced` 不支持工具调用（`response_with_functions` 忽略 `functions`，只记一条日志），设备音量这类 MCP 工具要走别的路径。句间响度只靠开头 0.6 s 的 RMS 定一个增益，实测句间差从 4.6 dB 降到 3.7 dB，不是响度标准，也不是彻底解决。
 
 ## 快速开始
 
@@ -185,8 +191,17 @@ python tools\turn_taking_sim.py --mode turns --question "说说你最喜欢的�
 
 只在 xiaozhi 上实测过。换框架时要实现的只有两边：
 
-- **TTS**：`POST /stream {"text": "..."}` 返回原始 PCM 流（s16le、24 kHz、单声道）；`GET /health` 返回 `{"busy": bool}`。`tts-service/` 已经是这个接口。
-- **LLM 客户端**：照上面的时序图分块续写。`llamacpp_paced.py` 只 import 了 xiaozhi 的 provider 基类和 logger，`turn_taking_sim.py` 就是脱离 xiaozhi 加载它的例子。
+- **TTS**：`POST /stream {"text": "..."}` 返回原始 PCM 流（s16le、24 kHz、单声道）；`GET /health` 返回 `{"busy": bool, "started": n, "served": n}`（两个计数单调递增，没有也行，只是短句的接手可能看不见）。`tts-service/` 已经是这个接口。
+- **LLM 客户端**：照上面的时序图分块续写。`llamacpp_paced.py` 只 import 了 xiaozhi 的 provider 基类和 logger，`turn_taking_sim.py` 就是脱离 xiaozhi 加载它的例子。握手靠轮询：句子交出去后最多等 `handoff_wait` 秒看 TTS 有没有接走；你的分句器如果经常攒得更久，就调大它，否则两者又会重叠。
+
+## 测试
+
+```powershell
+pip install -r tts-service\requirements.txt pytest
+python -m pytest tests
+```
+
+不需要显卡、模型或 xiaozhi：leveler、tail gate、provider（假的 llama-server 和 TTS）、wakeGate，以及 xiaozhi 补丁里内嵌的文件是否和仓库一致。CI（`.github/workflows/ci.yml`）另外在 Linux 上把补丁打到上游、只编 CPU 版桥接库，并用它逐字段核对 C 结构体和 Python 绑定的布局。POSIX 分支只到「能编译、ABI 对得上」这一步，没有带模型跑过。
 
 ## 目录
 
@@ -196,7 +211,8 @@ docs/         architecture.md · pitfalls.md · img/（README 图表，make_figu
 native-tts/   qwen3-tts.cpp 补丁 + Windows CUDA 编译 / 打包脚本 + 模型下载转换脚本
 tts-service/  HTTP TTS 服务 + 声音提示提取
 scripts/      llama-server 启动参数
-server/       xiaozhi-esp32-server 补丁（基于 a6cd755）、新增模块、配置示例
+server/       xiaozhi-esp32-server 补丁（基于 a6cd755）、新增模块、配置示例、sync_patch.py
+tests/        pytest（不需要显卡和模型）
 tools/        device_probe · loudness_stats · turn_taking_sim · wake_test · esp32/xiaozhi_assets
 ```
 

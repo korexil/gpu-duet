@@ -113,3 +113,11 @@
 **28. `git clone --filter=blob:none` 之后 `git checkout <commit> -- scripts` 会失败**，报 `unable to read sha1 file`，部分克隆没有按需拉取文件内容。只要固定提交里的几个文件时，用 `git init` + `git fetch --depth 1 <url> <完整 SHA>` + `git checkout FETCH_HEAD -- scripts`（`native-tts/setup-models.ps1`）。
 
 **29. venv 放在太深的目录，装 torch 会失败**：`OSError: [WinError 206] 文件名或扩展名太长`。torch 依赖里有很长的测试文件路径，加上 venv 本身的路径就超过 260 字符。venv 放在短路径下（比如 `D:\venv`），或者在系统里开启长路径支持。
+
+## 九、C 接口（Python ↔ C++）
+
+**30. 只比 `sizeof` 不算校验 ABI。** 结构体里两个同宽字段调换顺序、`int32` 换成 `float`，大小都不变，校验照样通过，然后在错误的偏移上读内存。桥接库改成导出每个结构体的大小加**每个字段的偏移**，Python 用 ctypes 的 `.offset` 算出同一张表逐项比对（`native-tts/` 补丁的 `qwen3_tts_bridge_abi_layout`、`tts-service/native_engine.py` 的 `check_abi`）。CI 在 Linux 上编一遍 CPU 版再跑这个比对。
+
+**31. C++ 异常穿过 C 边界会直接杀掉宿主进程。** `extern "C"` 的函数里抛出的异常没人接，Windows 上整个 Python 进程退出，连一行错误都没有。桥接库的每个导出函数都包一层 `try/catch`，异常变成 `success=0` 加错误文本，或者 `get_last_error` 里的一条消息。
+
+**32. 模型路径含非 ASCII 字符时，只读内存映射会拒绝加载。** 上游加载张量用 ANSI `fopen`，映射那条路用 `CreateFileW`，同一个日文路径两种编码可能指向不同文件，所以原先一律报错退出；日文 Windows 的用户目录就是这种路径。现在改成自动关掉映射、把表读进内存（多占约 0.6 GB），并打一行提示。

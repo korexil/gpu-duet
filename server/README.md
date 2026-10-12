@@ -36,9 +36,15 @@ git apply /path/to/xiaozhi-esp32-server.patch
 
 ## 测试
 
+本仓库根目录 `python -m pytest tests` 不需要 xiaozhi 就能测 provider 和 wakeGate。打了补丁的 xiaozhi 树里另有一份同样的测试：
+
 ```bash
 pip install pytest pytest-asyncio
 python -m pytest tests/core/handle/test_wake_gate.py tests/core/providers/llm/test_llamacpp_paced.py
 ```
 
-上游的 `tests/conftest.py` 会把 `httpx.Client` 替换成离线的假实现，所以 provider 的测试改用 `httpx._client.Client` 加 `MockTransport`。
+上游的 `tests/conftest.py` 会把 `httpx.Client` 替换成离线的假实现，所以那份 provider 测试改用 `httpx._client.Client` 加 `MockTransport`。
+
+## 补丁和仓库文件保持一致
+
+`llamacpp_paced.py` 和 `wakeGate.py` 的正本在本仓库，补丁里只是内嵌了一份。改过这两个文件后跑 `python server/sync_patch.py` 重写补丁；`tests/test_patch_in_sync.py` 会在 CI 里拦住漏掉的。

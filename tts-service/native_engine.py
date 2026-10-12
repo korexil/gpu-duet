@@ -5,6 +5,8 @@ in-context-learning (voice clone) prompt. See native-tts/README.md for the build
 """
 import ctypes as C
 import os
+import random
+import sys
 import time
 
 import numpy as np
@@ -37,32 +39,76 @@ class Result(C.Structure):
                 ('success', C.c_int32), ('error_msg', C.c_char_p), ('t_total_ms', C.c_int64)]
 
 
+ABI_STRUCTS = (Params, Streaming, Chunk, Result)
 Callback = C.CFUNCTYPE(C.c_int32, C.POINTER(Chunk), C.c_void_p)
 
 # talker_config.codec_language_id of Qwen3-TTS-12Hz-1.7B-Base
 LANGUAGE_IDS = {'zh': 2055, 'en': 2050, 'de': 2053, 'it': 2070, 'pt': 2071, 'es': 2054,
                 'ja': 2058, 'ko': 2064, 'fr': 2061, 'ru': 2069}
 
+CODEC_HZ = 12            # audio tokens per second of speech
+MIN_TOKENS = 128         # ~10.7 s: enough for any short reply even at a slow pace
+MAX_TOKENS = 1024        # ~85 s: the hard stop for a runaway generation
+TOKENS_PER_CHAR = 8      # ~0.67 s per character, 2-3x the slowest CJK speech rate
+
+
+def expected_layout():
+    """Mirror of qwen3_tts_bridge_abi_layout: each struct's size, then every field offset."""
+    layout = []
+    for struct in ABI_STRUCTS:
+        layout.append(C.sizeof(struct))
+        layout += [getattr(struct, name).offset for name, _ in struct._fields_]
+    return layout
+
+
+def check_abi(lib):
+    """Refuse a library whose structs differ from this binding. Libraries built before
+    the layout export only expose the sizes; those still load, with a warning."""
+    expected = expected_layout()
+    if hasattr(lib, 'qwen3_tts_bridge_abi_layout'):
+        lib.qwen3_tts_bridge_abi_layout.argtypes = [C.POINTER(C.c_int32), C.c_int32]
+        lib.qwen3_tts_bridge_abi_layout.restype = C.c_int32
+        values = (C.c_int32 * len(expected))()
+        count = lib.qwen3_tts_bridge_abi_layout(values, len(expected))
+        actual = list(values)[:min(count, len(expected))]
+        if count != len(expected) or actual != expected:
+            raise RuntimeError(f'ABI layout mismatch: library {actual} ({count} values) vs binding {expected}')
+        return 'layout'
+    lib.qwen3_tts_bridge_abi_sizes.argtypes = [C.POINTER(C.c_int32)]
+    sizes = (C.c_int32 * 4)()
+    lib.qwen3_tts_bridge_abi_sizes(sizes)
+    expected_sizes = [C.sizeof(t) for t in ABI_STRUCTS]
+    if list(sizes) != expected_sizes:
+        raise RuntimeError(f'ABI mismatch: library {list(sizes)} vs binding {expected_sizes}')
+    print('warning: library predates qwen3_tts_bridge_abi_layout; struct sizes match but the '
+          'field layout is unverified', file=sys.stderr)
+    return 'sizes'
+
+
+def token_budget(text):
+    """Audio tokens allowed for one sentence: proportional to its length, with a floor
+    for short texts and a ceiling against runaway generation."""
+    return min(MAX_TOKENS, max(MIN_TOKENS, TOKENS_PER_CHAR * len(text)))
+
 
 class NativeTTS:
     def __init__(self, library, models_dir, icl_prompt, backend='cuda', dll_dirs=(), seed=7,
-                 max_tokens=128, language='ja', cpu_threads=2):
+                 language='ja', cpu_threads=2):
+        """``seed`` fixes the sampling so a sentence always sounds the same (reproducible
+        tests, a stable voice); ``seed=None`` draws a fresh seed per sentence."""
         if backend == 'cpu':
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
         self._dll_dirs = [os.add_dll_directory(d) for d in dll_dirs] if hasattr(os, 'add_dll_directory') else []
         lib = self.lib = C.CDLL(library)
-        lib.qwen3_tts_bridge_abi_sizes.argtypes = [C.POINTER(C.c_int32)]
-        sizes = (C.c_int32 * 4)()
-        lib.qwen3_tts_bridge_abi_sizes(sizes)
-        expected = [C.sizeof(t) for t in (Params, Streaming, Chunk, Result)]
-        if list(sizes) != expected:
-            raise RuntimeError(f'ABI mismatch: library {list(sizes)} vs binding {expected}')
+        self.abi_check = check_abi(lib)
         lib.qwen3_tts_init.restype = C.c_void_p
         lib.qwen3_tts_free.argtypes = [C.c_void_p]
         lib.qwen3_tts_load_models.argtypes = [C.c_void_p, C.c_char_p]
         lib.qwen3_tts_set_backend_preference.argtypes = [C.c_int32]
         lib.qwen3_tts_set_cpu_threads.argtypes = [C.c_int32]
         lib.qwen3_tts_get_active_backend_name.restype = C.c_void_p
+        lib.qwen3_tts_get_last_error.argtypes = [C.c_void_p]
+        lib.qwen3_tts_get_last_error.restype = C.c_void_p
         lib.qwen3_tts_free_string.argtypes = [C.c_void_p]
         lib.qwen3_tts_synthesize_with_icl_prompt_streaming.argtypes = [
             C.c_void_p, C.c_char_p, C.c_char_p, Streaming, Callback, C.c_void_p]
@@ -75,31 +121,44 @@ class NativeTTS:
         if not self.ctx:
             raise RuntimeError('context allocation failed')
         if not lib.qwen3_tts_load_models(self.ctx, str(models_dir).encode()):
+            error = self._last_error()
             self.close()
-            raise RuntimeError('model loading failed')
-        name = lib.qwen3_tts_get_active_backend_name()
-        try:
-            self.active_backend = C.string_at(name).decode() if name else ''
-        finally:
-            if name:
-                lib.qwen3_tts_free_string(name)
+            raise RuntimeError(f'model loading failed: {error}')
+        self.active_backend = self._take_string(lib.qwen3_tts_get_active_backend_name())
         self.prompt = str(icl_prompt).encode()
-        self.backend, self.seed, self.max_tokens = backend, seed, max_tokens
+        self.backend, self.seed = backend, seed
         self.language_id = LANGUAGE_IDS[language]
+
+    def _take_string(self, pointer):
+        try:
+            return C.string_at(pointer).decode(errors='replace') if pointer else ''
+        finally:
+            if pointer:
+                self.lib.qwen3_tts_free_string(pointer)
+
+    def _last_error(self):
+        return self._take_string(self.lib.qwen3_tts_get_last_error(self.ctx))
 
     def close(self):
         if getattr(self, 'ctx', None):
             self.lib.qwen3_tts_free(self.ctx)
             self.ctx = None
 
-    def synthesize(self, text, emit, tail=True):
-        """Stream PCM to emit(float32 ndarray); returns metrics. emit may raise BrokenPipeError to cancel."""
-        budget = max(self.max_tokens, 512) if len(text) > 40 else self.max_tokens
-        params = Params(budget, .9, 1., 50, 2, 0, 0, 1.05, self.language_id, None, None, 2., self.seed, 1)
+    def synthesize(self, text, emit, tail=True, seed=None):
+        """Stream PCM to emit(float32 ndarray); returns metrics. emit may raise BrokenPipeError to cancel.
+
+        ``seed`` overrides the instance default for this sentence. The metrics carry
+        ``token_budget`` and ``truncated``: the model hit the budget before finishing,
+        so the end of the sentence is missing (the caller should log it)."""
+        budget = token_budget(text)
+        if seed is None:
+            seed = self.seed if self.seed is not None else random.getrandbits(62)
+        params = Params(budget, .9, 1., 50, 2, 0, 0, 1.05, self.language_id, None, None, 2., seed, 1)
         settings = Streaming(params, .32, 6.4, 0)
         gate = TailGate() if tail else None
         started = time.perf_counter()
-        metrics = dict(callbacks=[], input_samples=0, output_samples=0, cancelled=False, success=False)
+        metrics = dict(callbacks=[], input_samples=0, output_samples=0, cancelled=False, success=False,
+                       token_budget=budget, frames=0, truncated=False, seed=seed)
         failure = []
 
         def write(wave):
@@ -113,6 +172,7 @@ class NativeTTS:
                 wave = np.ctypeslib.as_array(chunk.samples, shape=(chunk.n_samples,)).copy()
                 metrics['callbacks'].append(dict(samples=len(wave), elapsed_seconds=time.perf_counter() - started))
                 metrics['input_samples'] += len(wave)
+                metrics['frames'] = max(metrics['frames'], int(chunk.end_frame))
                 write(gate.feed(wave) if gate else wave)
                 return 1
             except (BrokenPipeError, ConnectionResetError):
@@ -133,6 +193,7 @@ class NativeTTS:
             if not metrics['cancelled'] and gate:
                 write(gate.finish())
             metrics['success'] = bool(result.success) and not metrics['cancelled']
+            metrics['truncated'] = metrics['success'] and metrics['frames'] >= budget
             metrics['wall_seconds'] = time.perf_counter() - started
             return metrics
         finally:
