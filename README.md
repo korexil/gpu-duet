@@ -8,7 +8,7 @@
 
 - **不依赖云端**：ASR、LLM、TTS 全在本机，断网可用。
 - **8 GB 显存放得下**：LLM 约 2.9 GB + TTS 约 3.9 GB，GPU 合计约 7.3 GB。
-- **不卡顿**：LLM 和 TTS 轮流用 GPU，50 秒级的长回答供音无断档。
+- **不卡顿**：LLM 和 TTS 轮流用 GPU，80 秒级的长回答供音无断档。
 - **声音自备**：零样本克隆，3～10 秒参考音即可。
 
 终端用的是 [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)，但 GPU 轮流、原生 TTS、逐句整形都和它无关，可以接到任何逐句调用 TTS 的语音管线上。
@@ -103,7 +103,8 @@ sequenceDiagram
 | 文本 embedding 表留在 CPU，只在 CPU 上查表 | GPU −594 MiB |
 | 上面这张表改为只读内存映射，不预读、不复制 | RAM −594 MiB |
 | C ABI 桥接库 + 流式回调 | Python 用 ctypes 直接调用，边合成边吐 PCM |
-| 启动时逐字段比对 C 和 Python 两侧的结构体（大小和每个字段的偏移） | 版本对不上直接报错，不会读错内存 |
+| 启动时逐字段比对 C 和 Python 两侧的结构体（大小、每个字段的偏移和类型） | 版本对不上直接报错，不会读错内存 |
+| 模型、声音提示、参考音的路径按 UTF-8 打开 | 日文、中文目录名能用 |
 | 导出函数在 C 边界捕获 C++ 异常 | 引擎内部出错返回错误信息，不把 Python 进程一起带崩 |
 
 测过的配置下，PCM 与关闭这些开关时逐字节相同。显存超出 8 GB 时 Windows 驱动不报错，会把一部分挪到共享内存，解码悄悄变慢（[踩坑 #12](docs/pitfalls.md)）。
@@ -128,7 +129,7 @@ ESP-SR 不支持的名字（比如日语名），板载 MultiNet 用拼音近似
 
 | 细节 | 在哪 |
 |---|---|
-| TTS 同一时间只合成一句：第二个请求排队等（默认最多 30 s）再回 503，从不并发抢 GPU | `tts-service/server.py` |
+| TTS 同一时间只合成一句：第二个请求排队等（默认最多 30 s）再回 503，从不并发抢 GPU；排队期间客户端断开（用户打断）就直接放弃，不浪费 GPU | `tts-service/server.py` |
 | `/health` 除了 `busy` 还给 `started` / `served` 计数：一句话短到两次轮询之间就合成完，LLM 也能看见它被接走了 | `tts-service/server.py` · `llamacpp_paced.py` |
 | 等 TTS 接句有上限（`handoff_wait`，默认 0.4 s）：分句器把句子攒着不发时，回答不会卡住 | `llamacpp_paced.py` |
 | 客户端断开就停止合成，不在没人听的句子上花 GPU | `tts-service/server.py` |
@@ -218,9 +219,15 @@ tools/        device_probe · loudness_stats · turn_taking_sim · wake_test · 
 
 ## 已提交给上游的修复
 
+xiaozhi-esp32-server：
 - [#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411) FunASR 的 JSON 原样进入对话历史
 - [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) SenseVoice 日语识别结果按词带空格
 - [#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413) TTS 分句在引号内切开句子
+
+qwen3-tts.cpp：
+- [#5](https://github.com/Danmoreng/qwen3-tts.cpp/pull/5) 模型、声音提示、参考音路径按 UTF-8 打开（日文、中文目录名）
+- [#6](https://github.com/Danmoreng/qwen3-tts.cpp/pull/6) C 边界捕获异常、导出结构体 ABI 表、不依赖 JNI 的 C 桥接库
+- Q/K/V 去重和文本表放 CPU + 只读映射的分支已备好（`qkv-dedup`、`text-embd-cpu`），等前两个有回应再提
 
 ## 许可
 

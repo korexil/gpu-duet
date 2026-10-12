@@ -20,6 +20,7 @@ import select
 import socket
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -77,15 +78,30 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1', queue_timeo
                 self.close_connection = True
                 self.send_error(400)
                 return
-            if not busy.acquire(timeout=queue_timeout):
-                self.send_error(503, 'busy')
+            def client_closed():
+                return bool(select.select([self.connection], [], [], 0)[0]) and not self.connection.recv(1, socket.MSG_PEEK)
+
+            # Queue behind the running sentence, but never start one nobody is waiting for:
+            # a client that gave up (the user interrupted) is noticed while queuing, not after
+            # its first chunk was already synthesized.
+            deadline = time.monotonic() + queue_timeout
+            while not busy.acquire(timeout=0.05):
+                if client_closed():
+                    self.close_connection = True
+                    return
+                if time.monotonic() > deadline:
+                    self.send_error(503, 'busy')
+                    return
+            if client_closed():
+                busy.release()
+                self.close_connection = True
                 return
             counters['started'] += 1
             sent, collected = False, []
 
             def emit(wave):
                 nonlocal sent
-                if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
+                if client_closed():
                     raise BrokenPipeError('client closed')
                 if self.path == '/synthesize':
                     collected.append(wave.copy())

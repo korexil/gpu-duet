@@ -70,6 +70,18 @@ def test_pickup_is_seen_through_the_started_counter():
     assert time.monotonic() - t0 < 1.0   # did not sit out the full handoff_wait
 
 
+def test_sentence_finished_before_the_first_poll_still_counts_as_picked_up():
+    """The baseline is read before the text is yielded, so a consumer that synthesized the
+    short sentence in the meantime moves the counter past it and the LLM does not wait."""
+    seen = {}
+    # baseline poll (before yield) sees 7; every later poll sees 8 and idle
+    p = provider([1, 2, 3, 4, 5, 6, 7, EOS], seen, [{"busy": False, "started": 7}, {"busy": False, "started": 8}],
+                 voice_health_url="http://tts/health", handoff_wait=2.0)
+    t0 = time.monotonic()
+    list(p.response("s", [{"role": "user", "content": "x"}]))
+    assert time.monotonic() - t0 < 0.5
+
+
 def test_handoff_wait_bounds_the_stall_when_the_splitter_holds_the_sentence():
     seen = {}
     p = provider([1, 2, 3, 4, 5, 6, 7, EOS], seen, [{"busy": False, "started": 1}],

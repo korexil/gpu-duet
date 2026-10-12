@@ -116,8 +116,8 @@
 
 ## 九、C 接口（Python ↔ C++）
 
-**30. 只比 `sizeof` 不算校验 ABI。** 结构体里两个同宽字段调换顺序、`int32` 换成 `float`，大小都不变，校验照样通过，然后在错误的偏移上读内存。桥接库改成导出每个结构体的大小加**每个字段的偏移**，Python 用 ctypes 的 `.offset` 算出同一张表逐项比对（`native-tts/` 补丁的 `qwen3_tts_bridge_abi_layout`、`tts-service/native_engine.py` 的 `check_abi`）。CI 在 Linux 上编一遍 CPU 版再跑这个比对。
+**30. 只比 `sizeof` 不算校验 ABI。** 结构体里两个同宽字段调换顺序、`int32` 换成 `float`，大小都不变，校验照样通过，然后在错误的偏移上读内存。桥接库改成导出两张表：每个结构体的大小加**每个字段的偏移**（抓重排、增删），和每个字段的**类型码**（抓同宽度换类型）；Python 用 ctypes 的 `.offset` 和字段类型算出同样两张表逐项比对（`native-tts/` 补丁的 `qwen3_tts_bridge_abi_layout` / `qwen3_tts_bridge_abi_types`、`tts-service/native_engine.py` 的 `check_abi`）。CI 在 Linux 和 Windows 上各编一遍 CPU 版再跑这个比对。
 
 **31. C++ 异常穿过 C 边界会直接杀掉宿主进程。** `extern "C"` 的函数里抛出的异常没人接，Windows 上整个 Python 进程退出，连一行错误都没有。桥接库的每个导出函数都包一层 `try/catch`，异常变成 `success=0` 加错误文本，或者 `get_last_error` 里的一条消息。
 
-**32. 模型路径含非 ASCII 字符时，只读内存映射会拒绝加载。** 上游加载张量用 ANSI `fopen`，映射那条路用 `CreateFileW`，同一个日文路径两种编码可能指向不同文件，所以原先一律报错退出；日文 Windows 的用户目录就是这种路径。现在改成自动关掉映射、把表读进内存（多占约 0.6 GB），并打一行提示。
+**32. 模型路径含非 ASCII 字符时打不开文件。** 上游用 ANSI `fopen` 和窄字符 `std::filesystem::path` 打开模型、声音提示和参考音，路径却是 UTF-8 传进来的；日文 Windows 的用户目录就是这种路径，`fopen` 会去找一个按 CP932 解读的乱码文件名。补丁里的只读映射一开始只是拒绝加载，后来发现其余张量也会在同一个地方失败，所以统一改成先转宽字符再用 `_wfopen` / `CreateFileW`（`src/common/utf8_path.h`），用日文目录名实测通过。

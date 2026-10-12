@@ -50,3 +50,59 @@ jobs:
           set -e
           export GPU_DUET_LIBRARY="$(find build -name 'libqwen3_tts_bridge.so' | head -n 1)"
           python -m pytest tests/test_native_abi.py -q
+
+  # The same on Windows with MSVC (the release platform), still CPU only: the hosted
+  # runners have no GPU and no CUDA toolkit, so the CUDA build stays a local step
+  # (native-tts/build.ps1) whose result is checked by hand before a release.
+  native-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r tts-service/requirements.txt pytest
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Fetch upstream at the pinned commit and apply the patch
+        shell: bash
+        run: |
+          set -e
+          git clone --recursive https://github.com/Danmoreng/qwen3-tts.cpp.git upstream
+          cd upstream
+          git checkout 16bb5af
+          git submodule update --init --recursive
+          git apply --whitespace=nowarn ../native-tts/qwen3-tts-cpp-16bb5af.patch
+      - name: Build the bridge (CPU only)
+        shell: bash
+        run: |
+          set -e
+          cmake -S upstream -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DQWEN3_TTS_CUDA=OFF \
+            -DQWEN3_TTS_BUILD_C_BRIDGE=ON -DQWEN3_TTS_BUILD_SHARED=OFF -DQWEN3_TTS_COREML=OFF
+          cmake --build build --target qwen3_tts_bridge --parallel 4
+      - name: Check the ABI layout against the binding
+        shell: bash
+        run: |
+          set -e
+          export GPU_DUET_LIBRARY="$(find build -name 'qwen3_tts_bridge.dll' | head -n 1)"
+          python -m pytest tests/test_native_abi.py -q
+
+  # The xiaozhi patch must apply to the pinned base; against upstream main it is only
+  # reported, so drift shows up here before someone hits it.
+  xiaozhi-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch applies to the pinned base
+        run: |
+          set -e
+          base="$(tr -d '[:space:]' < server/PATCH_BASE.txt | sed 's/^.*@//')"   # "base: owner/repo@sha"
+          git clone --filter=blob:none https://github.com/xinnan-tech/xiaozhi-esp32-server.git upstream
+          cd upstream
+          git checkout "$base"
+          git apply --check --whitespace=nowarn ../server/xiaozhi-esp32-server.patch
+      - name: Patch still applies to upstream main (informational)
+        continue-on-error: true
+        run: |
+          cd upstream
+          git checkout main
+          git apply --check --whitespace=nowarn ../server/xiaozhi-esp32-server.patch

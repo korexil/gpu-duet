@@ -9,7 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from native_engine import ABI_STRUCTS, Params, check_abi, expected_layout, token_budget
+from native_engine import ABI_STRUCTS, Params, check_abi, expected_layout, expected_types, token_budget
+
+
+def test_type_codes_cover_every_field_and_tell_same_width_types_apart():
+    codes = expected_types()
+    assert len(codes) == sum(len(s._fields_) for s in ABI_STRUCTS)
+    names = [name for s in ABI_STRUCTS for name, _ in s._fields_]
+    by_name = dict(zip(names, codes))
+    assert by_name['max_audio_tokens'] == 1 and by_name['temperature'] == 3   # both 4 bytes, different codes
+    assert by_name['seed'] == 2 and by_name['instruction'] == 4 and by_name['generation'] == 5
 
 
 def test_layout_lists_every_field_in_order():
@@ -36,9 +45,9 @@ def test_token_budget_scales_with_text_and_stays_bounded():
 
 @pytest.mark.skipif(not os.environ.get('GPU_DUET_LIBRARY'), reason='set GPU_DUET_LIBRARY to a built bridge')
 def test_built_library_matches_the_binding():
-    library = Path(os.environ['GPU_DUET_LIBRARY'])
+    library = Path(os.environ['GPU_DUET_LIBRARY']).resolve()  # add_dll_directory needs an absolute path
     if hasattr(os, 'add_dll_directory'):
         for folder in (library.parent, library.parent / 'bin'):
             if folder.is_dir():
                 os.add_dll_directory(str(folder))
-    assert check_abi(C.CDLL(str(library))) == 'layout'
+    assert check_abi(C.CDLL(str(library))) == 'layout+types'
