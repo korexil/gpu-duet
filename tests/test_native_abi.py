@@ -45,7 +45,7 @@ def test_token_budget_scales_with_text_and_stays_bounded():
 
 @pytest.mark.skipif(not os.environ.get('GPU_DUET_LIBRARY'), reason='set GPU_DUET_LIBRARY to a built bridge')
 def test_built_library_matches_the_binding():
-    library = Path(os.environ['GPU_DUET_LIBRARY'])
+    library = Path(os.environ['GPU_DUET_LIBRARY']).resolve()  # add_dll_directory needs an absolute path
     if hasattr(os, 'add_dll_directory'):
         for folder in (library.parent, library.parent / 'bin'):
             if folder.is_dir():
