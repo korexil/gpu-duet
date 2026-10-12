@@ -22,6 +22,8 @@
 
 从 [Releases](https://github.com/korexil/gpu-duet/releases/latest) 下载 `gpu-duet-tts-win-x64-cuda12-sm75-86-89-120.zip`，解压到任意目录。编进了 RTX 20 / 30 / 40 / 50 系（sm 75 / 86 / 89 / 120），实机只测过 RTX 40 系（sm 89）。
 
+每个 Release 的说明里都写了 zip 的 SHA256，下载后对一下（`Get-FileHash <zip>`）。包是用 `build.ps1` 从干净的上游克隆加本仓库的补丁编出来的，但这不是可复现构建：自己编出的 DLL 二进制不会和包里的逐字节相同，只能比合成结果（实测同模型、同种子、同文本下 PCM 逐字节相同）。信不过预编译包就自己编，见下一节。
+
 CUDA 运行库用 NVIDIA 的官方 wheel，不用装 CUDA Toolkit：
 
 ```powershell
