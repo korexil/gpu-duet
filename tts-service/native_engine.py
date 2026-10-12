@@ -99,7 +99,9 @@ class NativeTTS:
         if backend == 'cpu':
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
         self._dll_dirs = [os.add_dll_directory(d) for d in dll_dirs] if hasattr(os, 'add_dll_directory') else []
-        lib = self.lib = C.CDLL(library)
+        # A fully qualified native path: with forward slashes Windows' safe DLL search
+        # does not treat the path as absolute and fails to resolve the dependencies.
+        lib = self.lib = C.CDLL(os.path.normpath(os.path.abspath(library)))
         self.abi_check = check_abi(lib)
         lib.qwen3_tts_init.restype = C.c_void_p
         lib.qwen3_tts_free.argtypes = [C.c_void_p]
