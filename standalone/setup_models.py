@@ -2,7 +2,7 @@
 and the GTCRN denoiser (~0.5 MB).
 
   python standalone/setup_models.py            # into standalone/models/
-  python standalone/setup_models.py --out D:\models\asr
+  python standalone/setup_models.py --out ../models/asr
 """
 import argparse
 import sys
