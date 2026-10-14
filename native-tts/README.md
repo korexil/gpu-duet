@@ -25,6 +25,20 @@ ABI 校验分三层：`qwen3_tts_bridge_abi_layout`（结构体大小 + 每个�
 
 每个 Release 的说明里都写了 zip 的 SHA256，下载后对一下（`Get-FileHash <zip>`）。当前 v0.1.2：`7c13d4ec087a72606b631357d0e214fe85ec94885a4ace7c3eac6e03a4882d93`。v0.1.2 编译于尾音补帧加入之前，不含这一项；其余开关都有，C ABI 与当前补丁一致。包是用 `build.ps1` 从干净的上游克隆加本仓库的补丁编出来的，但这不是可复现构建：自己编出的 DLL 二进制不会和包里的逐字节相同，只能比合成结果（实测同模型、同种子、同文本下 PCM 逐字节相同）。信不过预编译包就自己编，见下一节。
 
+### 版本
+
+三个版本是同一个引擎的预编译包，都基于 qwen3-tts.cpp `16bb5af`、CUDA 12.8、同样的 GPU 架构。**合成算法没变**：同模型、同声音提示、同种子下，三个版本输出的 PCM 逐字节相同。区别只在桥接库的稳定性和兼容性，用最新版即可。
+
+| 版本 | 发布 | 相对上一版的改动 | 用新的 `tts-service` 加载时 |
+|---|---|---|---|
+| [v0.1.2](https://github.com/korexil/gpu-duet/releases/tag/v0.1.2)（最新） | 2026-10-12 | 模型、声音提示、参考音的路径按 UTF-8 打开，中文、日文目录名可用；新增字段类型表 `qwen3_tts_bridge_abi_types` | 完整校验 |
+| [v0.1.1](https://github.com/korexil/gpu-duet/releases/tag/v0.1.1) | 2026-10-12 | 新增字段布局表 `qwen3_tts_bridge_abi_layout`，加载时逐字段核对；导出函数在 C 边界捕获 C++ 异常，出错不再带崩 Python 进程；非 ASCII 路径下只读映射自动退回读入内存；开关统一按 `1/true/on/yes` 解析 | 能用，警告「类型表未校验」 |
+| [v0.1.0](https://github.com/korexil/gpu-duet/releases/tag/v0.1.0) | 2026-10-10 | 第一版：QKV 去重、文本表放 CPU + 只读映射、解码器按需批处理、C 桥接库（只校验结构体大小） | 能用，警告「字段布局未校验」 |
+
+当前补丁比 v0.1.2 多一项尾音补帧（`QWEN3_TTS_TAIL_PAD_FRAMES`），C ABI 没变；要用它需要自己编译，或等下一个预编译包。
+
+### 运行库
+
 CUDA 运行库用 NVIDIA 的官方 wheel，不用装 CUDA Toolkit：
 
 ```powershell
