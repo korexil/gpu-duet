@@ -43,9 +43,9 @@ QUESTIONS = [
 SEEDS = [11, 22]
 CASES = {
     ('long', 'plain'): '无调度',
-    ('long', 'turns'): '仅 GPU 协调',
+    ('long', 'turns'): '仅 GPU 轮流',
     ('short', 'plain'): '仅缩短句子',
-    ('short', 'turns'): '缩短句子 + GPU 协调',
+    ('short', 'turns'): '缩短句子 + GPU 轮流',
 }
 
 

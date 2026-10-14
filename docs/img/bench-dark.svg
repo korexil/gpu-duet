@@ -14,13 +14,13 @@
 <line x1="291.4" y1="62" x2="291.4" y2="72" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="343.6" y1="62" x2="343.6" y2="72" stroke="#f0f6fc" stroke-width="1.5"/>
 <text x="351.6" y="71.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">2.62</text>
-<text x="108.0" y="99.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">仅 GPU 协调</text>
+<text x="108.0" y="99.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">仅 GPU 轮流</text>
 <rect x="118.0" y="86.0" width="154.5" height="18" rx="3.0" fill="#3987e5"/>
 <line x1="243.4" y1="95" x2="279.6" y2="95" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="243.4" y1="90" x2="243.4" y2="100" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="279.6" y1="90" x2="279.6" y2="100" stroke="#f0f6fc" stroke-width="1.5"/>
 <text x="287.6" y="99.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">1.83</text>
-<text x="108.0" y="127.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">缩短句子 + 协调</text>
+<text x="108.0" y="127.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">缩短句子 + 轮流</text>
 <rect x="118.0" y="114.0" width="120.0" height="18" rx="3.0" fill="#3987e5"/>
 <line x1="226.6" y1="123" x2="256.0" y2="123" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="226.6" y1="118" x2="226.6" y2="128" stroke="#f0f6fc" stroke-width="1.5"/>
@@ -41,12 +41,12 @@
 <line x1="118.0" y1="220" x2="118.0" y2="230" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="208.0" y1="220" x2="208.0" y2="230" stroke="#f0f6fc" stroke-width="1.5"/>
 <text x="216.0" y="229.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">0.48</text>
-<text x="108.0" y="257.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">仅 GPU 协调</text>
+<text x="108.0" y="257.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">仅 GPU 轮流</text>
 <line x1="118.0" y1="253" x2="118.0" y2="253" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="118.0" y1="248" x2="118.0" y2="258" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="118.0" y1="248" x2="118.0" y2="258" stroke="#f0f6fc" stroke-width="1.5"/>
 <text x="126.0" y="257.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">0.00</text>
-<text x="108.0" y="285.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">缩短句子 + 协调</text>
+<text x="108.0" y="285.0" font-size="13" fill="#f0f6fc" text-anchor="end" font-weight="400">缩短句子 + 轮流</text>
 <line x1="118.0" y1="281" x2="118.0" y2="281" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="118.0" y1="276" x2="118.0" y2="286" stroke="#f0f6fc" stroke-width="1.5"/>
 <line x1="118.0" y1="276" x2="118.0" y2="286" stroke="#f0f6fc" stroke-width="1.5"/>

@@ -1,6 +1,6 @@
 # 踩坑记录
 
-环境：RTX 4060 Laptop 8 GB、16 GB RAM、Windows 11；终端 M5Stack Atom EchoS3R（ESP32-S3）；服务端 xiaozhi-esp32-server（Docker）。对话语言是日语，结论大多与语言无关。
+环境：RTX 4060 Laptop 8 GB、16 GB 内存、Windows 11；终端 M5Stack Atom EchoS3R（ESP32-S3）；服务端 xiaozhi-esp32-server（Docker）。对话语言是日语，结论大多与语言无关。
 
 ---
 
@@ -12,13 +12,13 @@
 
 **3. SenseVoice 识别日语时按词带空格**（`今日 の こと を`）。修复：[#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412)。
 
-**4. 4B 模型放 CPU + 温度 1.0 + 2048 上下文，就是弱。** 换 Gemma 4 E4B（QAT q4_0）全层上 GPU：解码 63～65 tok/s，prefill 约 660 tok/s，首字 0.1～0.15 s，同一套提示词下质量明显更好。
+**4. 4B 模型放 CPU + 温度 1.0 + 2048 上下文，就是弱。** 换 Gemma 4 E4B（QAT q4_0）全层上 GPU：解码 61～66 tok/s，首字 0.1～0.2 s（随提示长短：36 token 约 0.1 s，400 token 约 0.2 s；复现方法见 [benchmarks.md](benchmarks.md#复现)），同一套提示词下质量明显更好。
 
 ## 二、小模型的提示词
 
 **5. 提示词里的例子会被反复照抄。** 列了几个可聊的日常话题（窗外、窗帘、电车……），20 次讲自己的一天，20 次提到「窗」。去掉例子后 0 次。
 
-**6. 句子越长，TTS 余量越小。** 不加约束时句长中位数 19 字、最长 53 字。提示词写明「一句只说一件事，约 15 字，及时用句号断开」后降到 12 / 27 字。每次 TTS 调用变短，断音减少，但不能消除：benchmark 里只缩短句子，6 次仍有 4 次断音（第 9 条）。
+**6. 句子越长，TTS 余量越小。** 在下面「评测方法」的对话集上，不加约束时句长中位数 19 字、最长 53 字。提示词写明「一句只说一件事，约 15 字，及时用句号断开」后降到 12 / 27 字（benchmark 的问题要求讲长一点，同样两种提示词下是 40 / 13.5 字，见 [benchmarks.md](benchmarks.md#benchmark只有-gpu-轮流能把断音压到-0)）。每次 TTS 调用变短，断音减少，但不能消除：benchmark 里只缩短句子，6 次仍有 4 次断音（第 9 条）。
 
 **7. 小模型约 75% 的回答以提问结尾。** 只靠提示词压不住，还会和其他要求互相拉扯。如果不想要，在上一轮以问句结尾时，往**最后一条用户消息末尾**附一条备注（provider 的 `question_rest_note`）。放末尾而不是系统提示里，前缀 KV 缓存不受影响。实测降到 9～26%，备注被念出来 0/66。
 
@@ -43,8 +43,8 @@
   |---|---|---|---|
   | 无调度 | 3.20 s | 2.27 s | 6/6 |
   | 仅缩短句子（+0.9 s 停顿） | 2.62 s | 0.48 s | 4/6 |
-  | 仅 GPU 协调 | 1.83 s | 0 | 0/6 |
-  | 缩短句子 + 协调 | 1.42 s | 0 | 0/6 |
+  | 仅 GPU 轮流 | 1.83 s | 0 | 0/6 |
+  | 缩短句子 + GPU 轮流 | 1.42 s | 0 | 0/6 |
 
   早先单次测量时以为「句子改短、加停顿后不轮流也不断音」，重复 6 次后不成立。断不断音取决于回答多长：只缩短句子时，音频 34 s 以内的 2 次都没断，35 s 以上的 4 次全断（0.45～1.55 s）。LLM 一直在后台生成，回答越长，TTS 被拖慢的时间越长，前面攒下的余量迟早用完。早先那次只测了一次，也没留下回答长度，很可能碰上的是短回答。实现：`server/core/providers/llm/llamacpp_paced/`；测量：`bench/run.py`。
 
@@ -54,7 +54,7 @@
 
 **12. 显存超额时，Windows 驱动不报错，只会悄悄变慢。** 两个 TTS 实例同时在 GPU 上时，llama-server 大部分显存被挪到共享系统内存，解码 66 → 45 tok/s，进程不崩。排查：任务管理器看每个进程的「专用 GPU 内存」。重启受影响的进程即可装回显存。
 
-**13. 内存也要算账（16 GB）。** PyTorch 版 TTS 进程 8.9 GB 私有内存，大部分被换到页面文件，每次合成都从磁盘读回，又慢又卡。换 C++ 原生引擎（`native-tts/`）后显存约 3.9 GB，内存也小得多。另外 Ollama 启动 llama-server 用的是 `--load-mode none`，权重读进私有内存而不是 mmap（见过 4.7 GB）；Docker Desktop 的 WSL 虚拟机约 3.4 GB。三样同时开时，可用内存曾被压到 141 MB，每秒换页 6 万次。
+**13. 内存也要算账（16 GB）。** PyTorch 版 TTS 进程 8.9 GB 私有内存，大部分被换到页面文件，每次合成都从磁盘读回，又慢又卡。换 C++ 原生引擎（`native-tts/`）后显存约 4.0 GB，内存也小得多。另外 Ollama 启动 llama-server 用的是 `--load-mode none`，权重读进私有内存而不是 mmap（见过 4.7 GB）；Docker Desktop 的 WSL 虚拟机约 3.4 GB。三样同时开时，可用内存曾被压到 141 MB，每秒换页 6 万次。
 
 ## 四、逐句合成后的声音
 
@@ -112,7 +112,7 @@
 
 **28. `git clone --filter=blob:none` 之后 `git checkout <commit> -- scripts` 会失败**，报 `unable to read sha1 file`，部分克隆没有按需拉取文件内容。只要固定提交里的几个文件时，用 `git init` + `git fetch --depth 1 <url> <完整 SHA>` + `git checkout FETCH_HEAD -- scripts`（`native-tts/setup-models.ps1`）。
 
-**29. venv 放在太深的目录，装 torch 会失败**：`OSError: [WinError 206] 文件名或扩展名太长`。torch 依赖里有很长的测试文件路径，加上 venv 本身的路径就超过 260 字符。venv 放在短路径下（比如 `D:\venv`），或者在系统里开启长路径支持。
+**29. venv 放在太深的目录，装 torch 会失败**：`OSError: [WinError 206] 文件名或扩展名太长`。torch 依赖里有很长的测试文件路径，加上 venv 本身的路径就超过 260 字符。venv 放在短路径下（比如盘根下的 `venv` 目录），或者在系统里开启长路径支持。
 
 ## 九、C 接口（Python ↔ C++）
 

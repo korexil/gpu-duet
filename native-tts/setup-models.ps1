@@ -6,7 +6,7 @@ Download and convert the models gpu-duet was measured with.
 
 TTS: Qwen/Qwen3-TTS-12Hz-1.7B-Base from Hugging Face, converted to F16 GGUF with the
      converters of qwen3-tts.cpp @ 16bb5af (cloned without submodules, scripts only).
-     Needs ~8 GB free disk during conversion; the result is ~4.2 GB.
+     Needs ~9 GB free disk during conversion (4.5 GB download + 4.2 GB output); the result is ~4.2 GB.
 LLM: gemma-4-E4B-it-q4_0-exact.gguf (4.2 GB), an unofficial Q4_0 GGUF that keeps
      Google's QAT weights exactly. Google's own gemma-4-E4B-it-qat-q4_0-gguf (5.2 GB)
      should also work but was not measured here.
