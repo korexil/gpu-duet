@@ -1,5 +1,7 @@
 # gpu-duet
 
+中文 · [English](README.en.md) · [日本語](README.ja.md)
+
 **让本地 LLM 和声音克隆 TTS 共用一块 8 GB 显卡：边生成边说话，长回答几乎不断音。**
 
 *A local LLM and a zero-shot voice-cloning TTS take turns on one 8 GB GPU. Use them as local HTTP services, or as an offline voice server for ESP32 boards running xiaozhi firmware.*
@@ -26,7 +28,7 @@
 |---|---|---|
 | 长回答首声（问完到第一声） | 6.2 s | **2.1 s** |
 | 长回答断音合计（播放中卡住的时长） | 4.22 s，卡 50 多次 | **0.17 s** |
-| 显存合计（8 GB 卡） | 约 8.3 GB，装不下 | **约 7.3 GB** |
+| 显存合计（8 GB 卡） | 约 8.3 GB，装不下（未打补丁的原生引擎，推算） | **约 7.3 GB** |
 
 <sub>RTX 4060 Laptop 8 GB。首声、断音：同一个长回答问题各问两次取平均，「之前」是 PyTorch 版 TTS + CPU 上的 LLM。显存：「之后」是实测 7,448 MiB，「之前」是再加上补丁省下的 488 + 594 MiB 推算出来的；GB 按任务管理器的口径（1 GB = 1024 MiB）。只改调度的对照实验（每组 6 次）里，轮流前 6/6 次有断音，轮流后 0/6。全部数据：[docs/benchmarks.md](docs/benchmarks.md)。</sub>
 
