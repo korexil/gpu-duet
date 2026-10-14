@@ -13,7 +13,7 @@
 
 <a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/demo-video.jpg" alt="Demo video: same RTX 4060 Laptop, same ESP32 board, going from a stall on every sentence to long answers with no gaps (Bilibili, 3 min 28 s)" width="640"></a>
 
-<sub>Real-device recording. The board's answers are the live audio; the questions were dubbed in afterwards.</sub>
+<sub>Real-device recording. The questions were asked live; their audio was later replaced with a synthesized voice. The board's answers are the live audio.</sub>
 
 ## What it does
 
@@ -148,7 +148,7 @@ Problems found upstream while building this project, fixed and submitted as PRs 
 |---|---|---|---|
 | [xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server) | [#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411) | FunASR's raw JSON ended up in the chat history | Merged |
 | | [#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413) | TTS sentence splitting cut sentences inside quotation marks | Merged |
-| | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice Japanese transcripts had spaces between words | Awaiting merge |
+| | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice Japanese transcripts had spaces between words | Merged |
 | [qwen3-tts.cpp](https://github.com/Danmoreng/qwen3-tts.cpp) | [#5](https://github.com/Danmoreng/qwen3-tts.cpp/pull/5) | Open model, voice prompt and reference audio paths as UTF-8 (Chinese and Japanese directory names) | Awaiting response |
 | | [#6](https://github.com/Danmoreng/qwen3-tts.cpp/pull/6) | Catch exceptions at the C boundary, export a struct ABI table, C bridge library | Awaiting response |
 

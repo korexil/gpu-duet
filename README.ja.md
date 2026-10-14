@@ -13,7 +13,7 @@
 
 <a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/demo-video.jpg" alt="デモ動画：同じ RTX 4060 Laptop と同じ ESP32 ボードで、毎文ごとに途切れていた状態から長い回答でも音切れしない状態へ（Bilibili、3 分 28 秒）" width="640"></a>
 
-<sub>実機での録画です。ボードの回答はその場の音声そのままで、質問は後から音声を当てています。</sub>
+<sub>実機での録画です。質問はその場でリアルタイムに話したもので、動画では質問の声だけ後から合成音声に差し替えています。ボードの回答はその場の音声そのままです。</sub>
 
 ## できること
 
@@ -148,7 +148,7 @@ python standalone\server.py
 |---|---|---|---|
 | [xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server) | [#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411) | FunASR の JSON がそのまま会話履歴に入る | マージ済み |
 | | [#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413) | TTS の文分割が引用符の内側で文を切ってしまう | マージ済み |
-| | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice の日本語認識結果に単語ごとの空白が入る | マージ待ち |
+| | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice の日本語認識結果に単語ごとの空白が入る | マージ済み |
 | [qwen3-tts.cpp](https://github.com/Danmoreng/qwen3-tts.cpp) | [#5](https://github.com/Danmoreng/qwen3-tts.cpp/pull/5) | モデル、ボイスプロンプト、参照音声のパスを UTF-8 で開く（中国語・日本語のディレクトリ名） | 返信待ち |
 | | [#6](https://github.com/Danmoreng/qwen3-tts.cpp/pull/6) | C 境界での例外捕捉、構造体 ABI テーブルのエクスポート、C ブリッジライブラリ | 返信待ち |
 
