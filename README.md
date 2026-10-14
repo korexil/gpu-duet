@@ -7,6 +7,11 @@
 [![CI](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/korexil/gpu-duet)](https://github.com/korexil/gpu-duet/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Bilibili](https://img.shields.io/badge/演示视频-Bilibili-00A1D6)](https://www.bilibili.com/video/BV15Cpr6eEMx)
+
+<a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/demo-video.jpg" alt="演示视频：同一台 RTX 4060 Laptop 和同一块 ESP32 板子上，从每句都卡到长回答不断音（B 站，3 分 28 秒）" width="640"></a>
+
+<sub>实机录像，板子的回答是现场原声，提问是后配的。</sub>
 
 ## 能做什么
 
