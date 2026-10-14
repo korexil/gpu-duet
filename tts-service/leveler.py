@@ -26,7 +26,7 @@ class Leveler:
     """Even out one reply that is synthesized sentence by sentence.
 
     Each sentence is synthesized independently, so on the device consecutive
-    phrases varied by ~5 dB and the gaps between them by 0.2-1.25 s (the model's
+    phrases varied by 5-7 dB and the gaps between them by 0.2-1.25 s (the model's
     own 0.4-0.7 s lead-in silence plus an uneven tail). This trims the lead-in, gives
     each sentence one gain measured on its first 0.6 s of speech, limits peaks
     smoothly and ends every sentence with the same pause.

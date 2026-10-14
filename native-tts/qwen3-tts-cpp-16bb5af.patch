@@ -169,10 +169,10 @@ index 0000000..dae5482
 +} // namespace qwen3_tts
 diff --git a/src/env_flag.h b/src/env_flag.h
 new file mode 100644
-index 0000000..015f29c
+index 0000000..2371ec8
 --- /dev/null
 +++ b/src/env_flag.h
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,39 @@
 +#pragma once
 +
 +#include <cctype>
@@ -198,6 +198,17 @@ index 0000000..015f29c
 +    }
 +    return !std::strcmp(lowered, "1") || !std::strcmp(lowered, "true") ||
 +           !std::strcmp(lowered, "on") || !std::strcmp(lowered, "yes");
++}
++
++// Integer switch: unset, empty or unparsable keeps the default.
++inline int env_int(const char * key, int fallback) {
++    const char * value = std::getenv(key);
++    if (!value || !*value) {
++        return fallback;
++    }
++    char * end = nullptr;
++    const long parsed = std::strtol(value, &end, 10);
++    return (end && *end == '\0') ? (int) parsed : fallback;
 +}
 +
 +} // namespace qwen3_tts
@@ -479,10 +490,18 @@ index 2b839da..52a0b04 100644
          return false;
      }
 diff --git a/src/pipeline/pipeline_synthesize.cpp b/src/pipeline/pipeline_synthesize.cpp
-index a73b00a..34aad16 100644
+index a73b00a..678d701 100644
 --- a/src/pipeline/pipeline_synthesize.cpp
 +++ b/src/pipeline/pipeline_synthesize.cpp
-@@ -1485,7 +1485,7 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
+@@ -1,6 +1,7 @@
+ #include "qwen3_tts.h"
+ #include "gguf_loader.h"
+ #include "pipeline/pipeline_internal.h"
++#include "env_flag.h"
+ 
+ #include <algorithm>
+ #include <cstdint>
+@@ -1485,12 +1486,30 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
                                      reference_codes_ptr ? reference_codes_ptr->codes.data() : nullptr,
                                      reference_codes_ptr ? reference_codes_ptr->n_frames : 0,
                                      reference_codes_ptr ? reference_codes_ptr->n_codebooks : 0,
@@ -491,6 +510,29 @@ index a73b00a..34aad16 100644
          result.error_msg = stream_error.empty()
              ? "Failed to generate speech codes: " + self.transformer_.get_error()
              : stream_error;
+         return result;
+     }
++    // The talker emits end-of-speech while the last frame is still at speaking level, so
++    // the final syllable has no release and the audio stops at about -20 dB. Repeating the
++    // last frame a few times lets the causal vocoder render the release and settle into
++    // silence (measured: 2-4 frames, i.e. 0.16-0.32 s). QWEN3_TTS_TAIL_PAD_FRAMES=0 disables it.
++    {
++        const int n_cb = self.transformer_.get_config().n_codebooks;
++        const int32_t tail_pad_frames = env_int("QWEN3_TTS_TAIL_PAD_FRAMES", 3);
++        if (tail_pad_frames > 0 && n_cb > 0 && generated_codes.size() >= (size_t) n_cb) {
++            const std::vector<int32_t> last(generated_codes.end() - n_cb, generated_codes.end());
++            for (int32_t i = 0; i < tail_pad_frames; ++i) {
++                generated_codes.insert(generated_codes.end(), last.begin(), last.end());
++                if (streaming && !stream.push_frame(last.data())) {
++                    result.error_msg = stream_error.empty() ? "Streaming vocoder tail pad failed" : stream_error;
++                    return result;
++                }
++            }
++        }
++    }
+     if (streaming && !stream.flush()) {
+         result.error_msg = stream_error.empty()
+             ? "Streaming vocoder flush failed"
 diff --git a/src/qwen3_tts.h b/src/qwen3_tts.h
 index 4829541..dff1be1 100644
 --- a/src/qwen3_tts.h
