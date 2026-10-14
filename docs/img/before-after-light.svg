@@ -1,26 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 262" width="480" height="262" font-family="-apple-system,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
 <defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#e34948" fill-opacity="0.18"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e34948" stroke-width="2"/></pattern></defs>
 <text x="0.0" y="16.0" font-size="15" fill="#1f2328" text-anchor="start" font-weight="600">长回答首声（s）</text>
-<text x="0.0" y="36.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">越低越好 · GPU 协调</text>
+<text x="0.0" y="36.0" font-size="12" fill="#59636e" text-anchor="start" font-weight="400">越低越好 · 起点→轮流，两次平均</text>
 <text x="0.0" y="65.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">之前</text>
-<rect x="40.0" y="48.0" width="128.0" height="24" rx="3.0" fill="#b7b5ae"/>
+<rect x="40.0" y="48.0" width="124.8" height="24" rx="3.0" fill="#b7b5ae"/>
 <line x1="40" y1="46" x2="40" y2="74" stroke="#d1d9e0"/>
-<text x="174.0" y="65.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">3.20</text>
+<text x="170.8" y="65.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">6.2</text>
 <text x="0.0" y="99.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">之后</text>
-<rect x="40.0" y="82.0" width="73.2" height="24" rx="3.0" fill="#2a78d6"/>
+<rect x="40.0" y="82.0" width="42.1" height="24" rx="3.0" fill="#2a78d6"/>
 <line x1="40" y1="80" x2="40" y2="108" stroke="#d1d9e0"/>
-<text x="119.2" y="99.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">1.83</text>
-<text x="260.0" y="16.0" font-size="15" fill="#1f2328" text-anchor="start" font-weight="600">长回答断音（s）</text>
-<text x="260.0" y="36.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">越低越好 · GPU 协调</text>
+<text x="88.1" y="99.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">2.1</text>
+<text x="260.0" y="16.0" font-size="15" fill="#1f2328" text-anchor="start" font-weight="600">长回答断音合计（s）</text>
+<text x="260.0" y="36.0" font-size="12" fill="#59636e" text-anchor="start" font-weight="400">越低越好 · 起点→轮流，两次平均</text>
 <text x="260.0" y="65.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">之前</text>
-<rect x="300.0" y="48.0" width="90.8" height="24" rx="3.0" fill="#b7b5ae"/>
+<rect x="300.0" y="48.0" width="118.0" height="24" rx="3.0" fill="#b7b5ae"/>
 <line x1="300" y1="46" x2="300" y2="74" stroke="#d1d9e0"/>
-<text x="396.8" y="65.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">2.27</text>
+<text x="424.0" y="65.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">4.22</text>
 <text x="260.0" y="99.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">之后</text>
+<rect x="300.0" y="82.0" width="4.6" height="24" rx="2.3" fill="#2a78d6"/>
 <line x1="300" y1="80" x2="300" y2="108" stroke="#d1d9e0"/>
-<text x="306.0" y="99.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">0.00</text>
+<text x="310.6" y="99.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">0.17</text>
 <text x="0.0" y="156.0" font-size="15" fill="#1f2328" text-anchor="start" font-weight="600">句间响度差（dB）</text>
-<text x="0.0" y="176.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">越低越好 · 逐句整形</text>
+<text x="0.0" y="176.0" font-size="12" fill="#59636e" text-anchor="start" font-weight="400">越低越好 · 逐句整形</text>
 <text x="0.0" y="205.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">之前</text>
 <rect x="40.0" y="188.0" width="107.3" height="24" rx="3.0" fill="#b7b5ae"/>
 <line x1="40" y1="186" x2="40" y2="214" stroke="#d1d9e0"/>
@@ -30,7 +31,7 @@
 <line x1="40" y1="220" x2="40" y2="248" stroke="#d1d9e0"/>
 <text x="132.3" y="239.0" font-size="14" fill="#1f2328" text-anchor="start" font-weight="600">3.7</text>
 <text x="260.0" y="156.0" font-size="15" fill="#1f2328" text-anchor="start" font-weight="600">名字唤醒命中（/60）</text>
-<text x="260.0" y="176.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">越高越好 · 服务端唤醒</text>
+<text x="260.0" y="176.0" font-size="12" fill="#59636e" text-anchor="start" font-weight="400">越高越好 · 服务端唤醒</text>
 <text x="260.0" y="205.0" font-size="13" fill="#59636e" text-anchor="start" font-weight="400">之前</text>
 <rect x="300.0" y="188.0" width="67.7" height="24" rx="3.0" fill="#b7b5ae"/>
 <line x1="300" y1="186" x2="300" y2="214" stroke="#d1d9e0"/>

@@ -1,7 +1,7 @@
 <#
 Start the LLM next to the TTS on an 8 GB GPU.
 
-Gemma 4 E4B QAT q4_0: all layers on the GPU (~2.9 GB with an 8k context). Its per-layer
+Gemma 4 E4B QAT q4_0: all layers on the GPU (~2.8 GB with an 8k context). Its per-layer
 embedding table stays in RAM and is read lazily (--lazy-mode on); without that, model
 loading pushed free RAM below 0.5 GB on a 16 GB machine.
 

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>gpu-duet live</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --text:#f0f6fc; --muted:#9198a1; --grid:#3d444d; --dim:#464c54;
+          --llm:#3987e5; --tts:#d95926; --play:#199e70; --bad:#e66767; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family: -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif; }
+  body { display:flex; flex-direction:column; padding:40px 60px; gap:18px; overflow:hidden; }
+  header { display:flex; align-items:center; gap:18px; }
+  .chip { padding:6px 18px; border-radius:12px; font-weight:700; font-size:26px; }
+  .chip.before { background:var(--bad); } .chip.after { background:var(--play); } .chip.idle { background:var(--dim); }
+  h1 { margin:0; font-size:40px; font-weight:700; flex:1; }
+  #clock { font-size:88px; font-weight:700; font-variant-numeric: tabular-nums; line-height:1; }
+  #question { color:var(--muted); font-size:30px; min-height:40px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #lane { background:var(--panel); border-radius:24px; width:100%; height:300px; display:block; }
+  .row { display:flex; gap:40px; align-items:flex-start; }
+  .stats { display:flex; gap:60px; flex:1; }
+  .stat .k { color:var(--muted); font-size:24px; } .stat .v { font-size:44px; font-weight:700; margin-top:4px; }
+  .sys { display:grid; grid-template-columns:auto 360px auto; gap:10px 16px; align-items:center; font-size:24px; }
+  .sys .k { color:var(--muted); }
+  .bar { height:18px; background:var(--grid); border-radius:9px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--llm); width:0; transition:width .4s; }
+  .sys .n { font-variant-numeric: tabular-nums; min-width:200px; }
+  #subtitle { flex:1; display:flex; align-items:center; justify-content:center; text-align:center; font-size:40px; line-height:1.4; padding:0 40px; }
+  footer { color:var(--dim); font-size:22px; display:flex; justify-content:space-between; }
+  .blue { color:var(--llm); } .red { color:var(--bad); } .green { color:var(--play); } .orange { color:var(--tts); } .grey { color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <span id="chip" class="chip idle">待机</span>
+  <h1 id="title">等待提问…</h1>
+  <div id="clock">00:00.0</div>
+</header>
+<div id="question"></div>
+<canvas id="lane"></canvas>
+<div class="row">
+  <div class="stats">
+    <div class="stat"><div class="k">首声</div><div class="v grey" id="first">—</div></div>
+    <div class="stat"><div class="k">断音</div><div class="v green" id="gaps">0 次 · 0.0 s</div></div>
+    <div class="stat"><div class="k">LLM</div><div class="v grey" id="llm">—</div></div>
+  </div>
+  <div class="sys">
+    <span class="k">内存</span><div class="bar"><i id="ram-bar"></i></div><span class="n" id="ram">—</span>
+    <span class="k">显存</span><div class="bar"><i id="vram-bar"></i></div><span class="n" id="vram">—</span>
+    <span class="k">GPU</span><div class="bar"><i id="gpu-bar"></i></div><span class="n" id="gpu">—</span>
+  </div>
+</div>
+<div id="subtitle"></div>
+<footer><span>断音按设备预缓冲估计 · 时间从听完问题算起</span><span id="conn">连接中…</span></footer>
+<script>
+const $ = id => document.getElementById(id);
+const C = { text:'#f0f6fc', muted:'#9198a1', grid:'#3d444d', dim:'#464c54', llm:'#3987e5', play:'#199e70', bad:'#e66767' };
+const WINDOW = 30;                     // seconds shown on the lane
+let state = reset();
+let offset = 0;                        // server clock - browser clock, estimated from events
+
+function reset() {
+  return { q: null, qText: '', frames: [], first: null, llmDone: null, stop: null, sentence: '' };
+}
+function now() { return Date.now() / 1000 + offset; }
+
+const es = new EventSource('/events');
+es.onopen = () => $('conn').textContent = '已连接';
+es.onerror = () => $('conn').textContent = '连接断开，重连中…';
+es.onmessage = e => {
+  const ev = JSON.parse(e.data);
+  offset = ev.t - Date.now() / 1000;
+  switch (ev.type) {
+    case 'metrics': showMetrics(ev); break;
+    case 'question': state = reset(); state.q = ev.t; state.qText = ev.text; break;
+    case 'sentence': state.sentence = ev.text; break;
+    case 'frame':
+      if (state.q === null) break;
+      if (state.first === null) state.first = ev.t - state.q;
+      state.frames.push({ t: ev.t - state.q, peak: ev.peak / 32767, gap: ev.gap || 0 });
+      break;
+    case 'llm_done': if (state.q !== null) state.llmDone = ev.t - state.q; break;
+    case 'stop': if (state.q !== null) state.stop = ev.t - state.q; break;
+  }
+};
+
+function showMetrics(m) {
+  const modes = { origin: ['before', '起点', 'PyTorch TTS 在 GPU，LLM 在 CPU'],
+                  engine: ['before', '换引擎', '原生 TTS 在 GPU，LLM 还在 CPU'],
+                  overlap: ['before', '对照', '两个都在 GPU，不轮流'],
+                  duet: ['after', '轮流', '两个都在 GPU，LLM 和 TTS 轮流'] };
+  const [cls, chip, title] = modes[m.mode] || modes.duet;
+  $('chip').className = 'chip ' + cls;
+  $('chip').textContent = chip;
+  $('title').textContent = m.title || title;
+  $('ram').textContent = `${m.ram_used_gb.toFixed(1)} / ${m.ram_total_gb.toFixed(0)} GB`;
+  $('ram-bar').style.width = (100 * m.ram_used_gb / m.ram_total_gb) + '%';
+  if (m.vram_total_mb) {
+    $('vram').textContent = `${(m.vram_used_mb / 1024).toFixed(2)} / ${(m.vram_total_mb / 1024).toFixed(0)} GB`;
+    $('vram-bar').style.width = (100 * m.vram_used_mb / m.vram_total_mb) + '%';
+    $('vram-bar').style.background = m.vram_used_mb / m.vram_total_mb > 0.97 ? C.bad : C.llm;
+    $('gpu').textContent = `${m.gpu_util} %`;
+    $('gpu-bar').style.width = m.gpu_util + '%';
+  }
+}
+
+const canvas = $('lane'), ctx = canvas.getContext('2d');
+function fmt(t) { const m = Math.floor(t / 60), s = t - m * 60; return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`; }
+
+function draw() {
+  requestAnimationFrame(draw);
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const elapsed = state.q === null ? 0 : (state.stop !== null ? state.stop : now() - state.q);
+  $('clock').textContent = fmt(Math.max(0, elapsed));
+  $('question').textContent = state.qText ? '问：' + state.qText : '';
+  const x0 = 40, x1 = w - 40, yc = h / 2 - 10, half = h / 2 - 60, lw = x1 - x0;
+  const t1 = Math.max(WINDOW, elapsed), t0 = t1 - WINDOW;
+  const X = t => x0 + (t - t0) / WINDOW * lw;
+  // ticks
+  ctx.font = '22px sans-serif'; ctx.fillStyle = C.muted; ctx.textAlign = 'center'; ctx.strokeStyle = C.grid; ctx.lineWidth = 2;
+  for (let s = Math.ceil(t0 / 5) * 5; s <= t1; s += 5) {
+    ctx.beginPath(); ctx.moveTo(X(s), yc + half + 8); ctx.lineTo(X(s), yc + half + 18); ctx.stroke();
+    ctx.fillText(s + 's', X(s), yc + half + 42);
+  }
+  // baseline
+  ctx.strokeStyle = C.dim; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, yc); ctx.lineTo(X(Math.min(elapsed, t1)), yc); ctx.stroke();
+  // frames (60 ms each) and gaps
+  const fw = Math.max(1, lw / WINDOW * 0.06);
+  let gapCount = 0, gapTotal = 0;
+  for (const f of state.frames) {
+    if (f.gap > 0) {
+      gapCount++; gapTotal += f.gap;
+      if (f.t >= t0) { ctx.fillStyle = C.bad; ctx.fillRect(X(f.t - f.gap), yc - half, Math.max(2, X(f.t) - X(f.t - f.gap)), half * 2); }
+    }
+    if (f.t < t0) continue;
+    const hh = Math.max(1, f.peak * half);
+    ctx.fillStyle = C.play; ctx.fillRect(X(f.t), yc - hh, fw, hh * 2);
+  }
+  if (state.first !== null && state.first >= t0) {
+    ctx.strokeStyle = C.llm; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(state.first), yc - half - 12); ctx.lineTo(X(state.first), yc + half); ctx.stroke();
+    ctx.fillStyle = C.llm; ctx.textAlign = 'left'; ctx.fillText(`首声 ${state.first.toFixed(2)} s`, X(state.first) + 8, yc - half - 16);
+  }
+  if (state.q !== null && state.stop === null) {   // playhead
+    ctx.strokeStyle = C.text; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(elapsed), yc - half - 12); ctx.lineTo(X(elapsed), yc + half + 12); ctx.stroke();
+  }
+  $('first').textContent = state.first === null ? '—' : state.first.toFixed(2) + ' s';
+  $('first').className = 'v ' + (state.first === null ? 'grey' : 'blue');
+  $('gaps').textContent = `${gapCount} 次 · ${gapTotal.toFixed(1)} s`;
+  $('gaps').className = 'v ' + (gapCount ? 'red' : 'green');
+  const llm = state.q === null ? '—' : (state.llmDone !== null ? '已写完' : '还在写…');
+  $('llm').textContent = llm; $('llm').className = 'v ' + (llm === '还在写…' ? 'orange' : 'grey');
+  $('subtitle').textContent = state.sentence;
+}
+draw();
+</script>
+</body>
+</html>

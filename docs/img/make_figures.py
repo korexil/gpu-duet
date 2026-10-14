@@ -2,8 +2,11 @@
 
   python docs/img/make_figures.py
 
-Numbers come from bench/results/runs.jsonl (medians, long sentences), docs/pitfalls.md
-and docs/architecture.md. The timeline is a schematic; only its annotated values are measured.
+Numbers come from bench/results/runs.jsonl (medians, long sentences), docs/pitfalls.md,
+docs/architecture.md and STAGES below (the four-stage run of 2026-10-14). The timeline is a
+schematic; only its annotated values are measured. GPU memory is in Task Manager GB
+(1024 MiB), measured 2026-10-14 (docs/benchmarks.md#复现): TTS 4,027-4,065 MiB, LLM 2,899 MiB,
+total 7,448 MiB; "unoptimized" adds back the patch savings, 488 + 594 MiB.
 """
 from pathlib import Path
 
@@ -91,8 +94,8 @@ def vram():
     """GPU memory on the 8 GB card, with and without the TTS storage switches."""
     x0, x1, top = 0, 470, 8.6
     sx = lambda gb: x0 + (x1 - x0) * gb / top
-    rows = [("TTS 未做存储优化（推算）", "8.4 GB · 超出", [("TTS", 5.0, "tts"), ("LLM", 2.9, "llm"), ("", 0.5, "neutral")]),
-            ("本仓库配置", "7.3 GB", [("TTS", 3.9, "tts"), ("LLM", 2.9, "llm"), ("", 0.5, "neutral")])]
+    rows = [("TTS 未做存储优化（推算）", "8.3 GB · 超出", [("TTS", 5.0, "tts"), ("LLM", 2.8, "llm"), ("", 0.5, "neutral")]),
+            ("本仓库配置", "7.3 GB", [("TTS", 4.0, "tts"), ("LLM", 2.8, "llm"), ("", 0.5, "neutral")])]
     body, cap = [], sx(8.0)
     body.append(f'<line x1="{cap:.1f}" y1="22" x2="{cap:.1f}" y2="160" stroke="{{bad}}" stroke-width="1.5" stroke-dasharray="4 3"/>')
     body.append(t(cap, 15, "显存 8 GB", 13, "text", "middle", 600))
@@ -113,19 +116,79 @@ def vram():
     write("vram", 480, 192, body)
 
 
+# Same question ("a ~300-character story"), same cloned voice, same standalone pipeline,
+# two runs per stage, 2026-10-14. Gaps are estimated against the device's 0.3 s pre-buffer
+# (standalone/session.py Pacer). (first audio s, gap count, gap total s) per run.
+STAGES = [
+    ("起点", "PyTorch TTS · LLM 在 CPU", [(6.67, 54, 3.68), (5.81, 58, 4.75)]),
+    ("换引擎", "原生 TTS · LLM 在 CPU", [(5.18, 28, 55.89), (5.56, 3, 0.18)]),
+    ("LLM 上 GPU", "两者同时用 GPU", [(4.19, 10, 2.08), (4.33, 8, 2.69)]),
+    ("轮流", "LLM 写完一句等 TTS", [(2.09, 1, 0.13), (2.12, 2, 0.20)]),
+]
+
+
+def mean(values):
+    return sum(values) / len(values)
+
+
+def fmt_half_up(value, digits):
+    """Round half up (4.215 -> 4.22), not to the nearest binary float, so the labels match
+    what a reader gets by averaging the two runs by hand."""
+    from decimal import ROUND_HALF_UP, Decimal
+    return str(Decimal(repr(value)).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP))
+
+
+def stages():
+    """First audio and gap total for the four stages, both runs drawn."""
+    x0, x1 = 150, 410
+    metrics = [("首声（s）", 0, 8.0, "{:.2f}"), ("断音合计（s）", 2, 6.0, "{:.2f}")]
+    body, y = [], 0
+    for title, index, top, fmt in metrics:
+        sx = lambda v: x0 + (x1 - x0) * min(v, top) / top
+        body.append(t(0, y + 16, title, 15, weight=600))
+        body.append(t(480, y + 16, "每阶段两次，各画一条", 12, "muted", "end"))
+        y += 28
+        for name, note, runs in STAGES:
+            body.append(t(0, y + 15, name, 13, weight=600))
+            body.append(t(0, y + 31, note, 11, "muted"))
+            key = "llm" if name == "轮流" else "neutral"
+            for j, run in enumerate(runs):
+                value = run[index]
+                by = y + 2 + j * 15
+                if value:
+                    body.append(bar(x0, sx(value), by, 12, key, 2))
+                label = fmt.format(value)
+                if index == 2:
+                    label += f" · {run[1]} 次"
+                if value > top:   # off the scale: cut the bar and put the value inside it
+                    body.append(f'<line x1="{sx(top) - 8:.1f}" y1="{by - 1}" x2="{sx(top) - 4:.1f}" y2="{by + 13}" '
+                                'stroke="{text}" stroke-width="2"/>')
+                    body.append(t(sx(top) - 14, by + 10, label + "（超出刻度）", 11, "text", "end", 600))
+                else:
+                    body.append(t(sx(value) + 6, by + 10, label, 11, "text", "start", 600))
+            y += 40
+        body.append(f'<line x1="{x0}" y1="{y - 160}" x2="{x0}" y2="{y - 6}" stroke="{{grid}}"/>')
+        y += 14
+    body.append(t(0, y + 4, "同一问题 · 同一克隆声音 · 独立服务端 · 断音按设备 0.3 s 预缓冲估计", 11, "muted"))
+    write("stages", 480, y + 12, body)
+
+
 def before_after():
-    """Four measured improvements, each on its own scale."""
+    """Start of the journey vs. now, each metric on its own scale."""
+    origin, duet = STAGES[0][2], STAGES[-1][2]
+    first0, first1 = mean([r[0] for r in origin]), mean([r[0] for r in duet])
+    gap0, gap1 = mean([r[2] for r in origin]), mean([r[2] for r in duet])
     panels = [
-        ("长回答首声（s）", "越低越好 · GPU 协调", 3.20, 1.83, 3.5, "{:.2f}"),
-        ("长回答断音（s）", "越低越好 · GPU 协调", 2.27, 0.0, 3.5, "{:.2f}"),
-        ("句间响度差（dB）", "越低越好 · 逐句整形", 4.6, 3.7, 6.0, "{:.1f}"),
-        ("名字唤醒命中（/60）", "越高越好 · 服务端唤醒", 29, 53, 60, "{:.0f}"),
+        ("长回答首声（s）", "越低越好 · 起点→轮流，两次平均", round(first0, 4), round(first1, 4), 7.0, 1),
+        ("长回答断音合计（s）", "越低越好 · 起点→轮流，两次平均", round(gap0, 4), round(gap1, 4), 5.0, 2),
+        ("句间响度差（dB）", "越低越好 · 逐句整形", 4.6, 3.7, 6.0, 1),
+        ("名字唤醒命中（/60）", "越高越好 · 服务端唤醒", 29, 53, 60, 0),
     ]
     body, pw = [], 220
     for i, (title, note, before, after, top, fmt) in enumerate(panels):
         px, py = (i % 2) * (pw + 40), (i // 2) * 140
         body.append(t(px, py + 16, title, 15, weight=600))
-        body.append(t(px, py + 36, note, 13, "muted"))
+        body.append(t(px, py + 36, note, 12, "muted"))
         bx0, bx1 = px + 40, px + pw - 40
         for j, (label, value, key) in enumerate([("之前", before, "neutral"), ("之后", after, "llm")]):
             y = py + 48 + j * 34
@@ -134,7 +197,7 @@ def before_after():
             if value:
                 body.append(bar(bx0, end, y, 24, key))
             body.append(f'<line x1="{bx0}" y1="{y - 2}" x2="{bx0}" y2="{y + 26}" stroke="{{grid}}"/>')
-            body.append(t(end + 6, y + 17, fmt.format(value), 14, "text", "start", 600))
+            body.append(t(end + 6, y + 17, fmt_half_up(value, fmt), 14, "text", "start", 600))
     write("before-after", 480, 262, body)
 
 
@@ -147,7 +210,7 @@ def bench():
         return
     rows = [json.loads(line) for line in runs.open(encoding="utf-8")]
     cases = [("long", "plain", "无调度"), ("short", "plain", "仅缩短句子"),
-             ("long", "turns", "仅 GPU 协调"), ("short", "turns", "缩短句子 + 协调")]
+             ("long", "turns", "仅 GPU 轮流"), ("short", "turns", "缩短句子 + 轮流")]
     metrics = [("first_audio_s", "首声（s）"), ("underrun_total_s", "断音合计（s）")]
     x0, x1, body, y = 118, 430, [], 0
     for key, title in metrics:
@@ -179,5 +242,6 @@ if __name__ == "__main__":
     timeline()
     vram()
     before_after()
+    stages()
     bench()
     print("wrote", sorted(p.name for p in OUT.glob("*.svg")))

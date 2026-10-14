@@ -28,10 +28,13 @@ import numpy as np
 import soundfile as sf
 
 # Storage switches of the patched engine (see native-tts/README.md): QKV dedup and a
-# read-only, CPU-resident text embedding table save ~1.6 GB GPU + ~0.6 GB RAM with
+# read-only, CPU-resident text embedding table save ~1.1 GB GPU (488 + 594 MiB) + ~0.6 GB RAM with
 # byte-identical PCM on the tested configurations.
 ENGINE_ENV = dict(QWEN3_TTS_LAZY_BATCH_DECODER='1', QWEN3_TTS_LOW_MEM='0', QWEN3_TTS_QKV_DEDUP='1',
-                  QWEN3_TTS_TEXT_EMBD_CPU='1', QWEN3_TTS_TEXT_EMBD_MMAP='1')
+                  QWEN3_TTS_TEXT_EMBD_CPU='1', QWEN3_TTS_TEXT_EMBD_MMAP='1',
+                  # the talker stops while the last syllable is still sounding; the engine repeats the
+                  # last frame this many times so the vocoder renders the release (0.24 s)
+                  QWEN3_TTS_TAIL_PAD_FRAMES='3')
 
 
 def make_server(tts, leveler, port, log_path=None, host='127.0.0.1', queue_timeout=30.0):
@@ -190,7 +193,9 @@ def main():
     parser.add_argument('--library', required=True, help='qwen3_tts_bridge shared library')
     parser.add_argument('--dll-dir', action='append', default=[], help='extra DLL search dirs, e.g. a CUDA toolkit bin')
     parser.add_argument('--models', required=True, help='directory with the converted F16 GGUF models')
-    parser.add_argument('--icl-prompt', required=True, help='voice clone prompt from --extract-icl-prompt')
+    parser.add_argument('--icl-prompt', help='voice clone prompt from --extract-icl-prompt (Base talker)')
+    parser.add_argument('--speaker', help='named speaker of a CustomVoice talker, e.g. vivian, ryan, aiden')
+    parser.add_argument('--instruct', help='CustomVoice style instruction, e.g. "语速放慢，轻快有起伏，语气自然"')
     parser.add_argument('--backend', choices=['cuda', 'cpu'], default='cuda')
     parser.add_argument('--language', default='zh', help='zh en ja ko de fr es it pt ru')
     parser.add_argument('--port', type=int, default=18766)
@@ -209,8 +214,11 @@ def main():
     from leveler import Leveler
     from native_engine import NativeTTS
 
+    if bool(args.icl_prompt) == bool(args.speaker):
+        parser.error('give exactly one of --icl-prompt (voice clone) or --speaker (CustomVoice model)')
     tts = NativeTTS(args.library, args.models, args.icl_prompt, backend=args.backend,
-                    dll_dirs=default_dll_dirs(args.library) + args.dll_dir, language=args.language, seed=args.seed)
+                    dll_dirs=default_dll_dirs(args.library) + args.dll_dir, language=args.language, seed=args.seed,
+                    speaker=args.speaker, instruct=args.instruct)
     try:
         warm = tts.synthesize({'zh': '嗯。', 'ja': 'うん。'}.get(args.language, 'OK.'), lambda wave: None)
         if not warm['success']:

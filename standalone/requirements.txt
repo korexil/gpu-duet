@@ -1,0 +1,7 @@
+numpy
+httpx
+pyyaml
+websockets>=13
+onnxruntime
+sherpa-onnx
+pyogg; sys_platform == "win32"

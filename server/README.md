@@ -4,8 +4,6 @@
 
 ## 最小接入：挂载一个文件夹
 
-两种接法都只在 `a6cd755` 上实测过（`PATCH_BASE.txt`）。挂载方式依赖上游两处内部约定：按 `type` 去 `core/providers/llm/<type>/` 找 provider，以及 `LLMProviderBase` 和 `config.logger` 的 import 路径；上游改了这些就要跟着改。CI 会检查补丁是否还能打到固定基线，并顺带对上游 `main` 试一次（只报告，不拦）。
-
 xiaozhi 按配置里的 `type` 去 `core/providers/llm/<type>/` 找 provider，所以把 `llamacpp_paced` 挂进官方镜像就能用。
 
 1. 把 [`config-examples/docker-compose.override.yml`](config-examples/docker-compose.override.yml) 放到 xiaozhi 的 `docker-compose.yml` 旁边。`GPU_DUET` 指向本仓库，默认是同级的 `gpu-duet` 文件夹。
@@ -13,6 +11,8 @@ xiaozhi 按配置里的 `type` 去 `core/providers/llm/<type>/` 找 provider，�
 3. `docker compose up -d`。
 
 删掉 `voice_health_url` 就是不轮流的普通流式 provider，方便对照。
+
+两种接法都只在 `a6cd755` 上实测过（`PATCH_BASE.txt`）。挂载方式依赖上游两处内部约定：上面这条 provider 查找规则，以及 `LLMProviderBase` 和 `config.logger` 的 import 路径；上游改了这些就要跟着改。CI 会检查补丁是否还能打到固定基线，并顺带对上游 `main` 试一次（只报告，不拦）。
 
 ## 完整补丁：服务端唤醒 + 设备音量
 
@@ -34,11 +34,11 @@ git apply /path/to/xiaozhi-esp32-server.patch
 - 设备音量：`data/device_volume.json`，`{"volume": 0-100}`，设备每次连接时生效。
 - 闸门开启时，「无声音超时断开」不再生效（会话需要一直开着），超时只触发道别。
 
-另有三个通用修复已单独提交给上游：[#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411)（FunASR 的 JSON 原样进入对话历史）、[#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412)（SenseVoice 日语识别结果按词带空格）、[#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413)（TTS 分句在引号内切开句子）。未合并前建议一起打上。
+另有三个通用修复已单独提交给上游：[#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411)（FunASR 的 JSON 原样进入对话历史）、[#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412)（SenseVoice 日语识别结果按词带空格）、[#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413)（TTS 分句在引号内切开句子）。截至 2026-10-14，#3411、#3413 已合并进上游 `main`（晚于补丁基线 `a6cd755`），#3412 未合并；停在 `a6cd755` 的话三个都建议一起打上。
 
 ## 测试
 
-本仓库根目录 `python -m pytest tests` 不需要 xiaozhi 就能测 provider 和 wakeGate。打了补丁的 xiaozhi 树里另有一份同样的测试：
+本仓库根目录 `python -m pytest tests` 不需要 xiaozhi 就能测 provider 和 wakeGate。打了补丁的 xiaozhi 树里另有一份同样的测试，在 `main/xiaozhi-server` 目录下运行：
 
 ```bash
 pip install pytest pytest-asyncio

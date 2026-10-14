@@ -117,10 +117,16 @@ def token_budget(text):
 
 
 class NativeTTS:
-    def __init__(self, library, models_dir, icl_prompt, backend='cuda', dll_dirs=(), seed=7,
-                 language='ja', cpu_threads=2):
+    def __init__(self, library, models_dir, icl_prompt=None, backend='cuda', dll_dirs=(), seed=7,
+                 language='ja', cpu_threads=2, speaker=None, instruct=None):
         """``seed`` fixes the sampling so a sentence always sounds the same (reproducible
-        tests, a stable voice); ``seed=None`` draws a fresh seed per sentence."""
+        tests, a stable voice); ``seed=None`` draws a fresh seed per sentence.
+
+        Two ways to pick the voice: ``icl_prompt`` (a Base talker cloning a reference) or
+        ``speaker`` with an optional ``instruct`` (a CustomVoice talker's named speaker, the
+        instruction steering tone and pace, e.g. "语速放慢，轻快有起伏")."""
+        if not icl_prompt and not speaker:
+            raise ValueError('give an icl_prompt (voice clone) or a speaker (CustomVoice model)')
         if backend == 'cpu':
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
         self._dll_dirs = [os.add_dll_directory(d) for d in dll_dirs] if hasattr(os, 'add_dll_directory') else []
@@ -140,6 +146,8 @@ class NativeTTS:
         lib.qwen3_tts_synthesize_with_icl_prompt_streaming.argtypes = [
             C.c_void_p, C.c_char_p, C.c_char_p, Streaming, Callback, C.c_void_p]
         lib.qwen3_tts_synthesize_with_icl_prompt_streaming.restype = Result
+        lib.qwen3_tts_synthesize_streaming.argtypes = [C.c_void_p, C.c_char_p, Streaming, Callback, C.c_void_p]
+        lib.qwen3_tts_synthesize_streaming.restype = Result
         lib.qwen3_tts_free_result.argtypes = [Result]
         if not lib.qwen3_tts_set_backend_preference({'cpu': 1, 'cuda': 2}[backend]):
             raise RuntimeError('backend selection failed')
@@ -152,7 +160,9 @@ class NativeTTS:
             self.close()
             raise RuntimeError(f'model loading failed: {error}')
         self.active_backend = self._take_string(lib.qwen3_tts_get_active_backend_name())
-        self.prompt = str(icl_prompt).encode()
+        self.prompt = str(icl_prompt).encode() if icl_prompt else None
+        self.speaker = speaker.encode() if speaker else None
+        self.instruct = instruct.encode() if instruct else None
         self.backend, self.seed = backend, seed
         self.language_id = LANGUAGE_IDS[language]
 
@@ -180,7 +190,8 @@ class NativeTTS:
         budget = token_budget(text)
         if seed is None:
             seed = self.seed if self.seed is not None else random.getrandbits(62)
-        params = Params(budget, .9, 1., 50, 2, 0, 0, 1.05, self.language_id, None, None, 2., seed, 1)
+        params = Params(budget, .9, 1., 50, 2, 0, 0, 1.05, self.language_id, self.instruct, self.speaker, 2., seed,
+                        1 if self.prompt else 0)   # full-text prefill is an ICL-prompt feature
         settings = Streaming(params, .32, 6.4, 0)
         gate = TailGate() if tail else None
         started = time.perf_counter()
@@ -210,8 +221,11 @@ class NativeTTS:
                 return 0
 
         callback = Callback(receive)
-        result = self.lib.qwen3_tts_synthesize_with_icl_prompt_streaming(
-            self.ctx, text.encode('utf-8'), self.prompt, settings, callback, None)
+        if self.prompt:
+            result = self.lib.qwen3_tts_synthesize_with_icl_prompt_streaming(
+                self.ctx, text.encode('utf-8'), self.prompt, settings, callback, None)
+        else:
+            result = self.lib.qwen3_tts_synthesize_streaming(self.ctx, text.encode('utf-8'), settings, callback, None)
         try:
             if failure:
                 raise failure[0]
@@ -220,7 +234,9 @@ class NativeTTS:
             if not metrics['cancelled'] and gate:
                 write(gate.finish())
             metrics['success'] = bool(result.success) and not metrics['cancelled']
-            metrics['truncated'] = metrics['success'] and metrics['frames'] >= budget
+            # the engine appends QWEN3_TTS_TAIL_PAD_FRAMES copies of the last frame after end-of-speech
+            tail_pad = int(os.environ.get('QWEN3_TTS_TAIL_PAD_FRAMES') or 3)
+            metrics['truncated'] = metrics['success'] and metrics['frames'] - tail_pad >= budget
             metrics['wall_seconds'] = time.perf_counter() - started
             return metrics
         finally:
