@@ -13,7 +13,7 @@
 
 <a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/demo-video.jpg" alt="演示视频：同一台 RTX 4060 Laptop 和同一块 ESP32 板子上，从每句都卡到长回答不断音（B 站，3 分 28 秒）" width="640"></a>
 
-<sub>实机录像，板子的回答是现场原声，提问是后配的。</sub>
+<sub>实机录像。提问是现场实时问的，视频里的提问声后来换成了合成声；板子的回答是现场原声。</sub>
 
 ## 能做什么
 
@@ -147,7 +147,7 @@ python standalone\server.py
 |---|---|---|---|
 | [xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server) | [#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411) | FunASR 的 JSON 原样进入对话历史 | 已合并 |
 | | [#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413) | TTS 分句在引号内切开句子 | 已合并 |
-| | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice 日语识别结果按词带空格 | 待合并 |
+| | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice 日语识别结果按词带空格 | 已合并 |
 | [qwen3-tts.cpp](https://github.com/Danmoreng/qwen3-tts.cpp) | [#5](https://github.com/Danmoreng/qwen3-tts.cpp/pull/5) | 模型、声音提示、参考音路径按 UTF-8 打开（中文、日文目录） | 待回复 |
 | | [#6](https://github.com/Danmoreng/qwen3-tts.cpp/pull/6) | C 边界捕获异常、导出结构体 ABI 表、C 桥接库 | 待回复 |
 

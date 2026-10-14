@@ -2,12 +2,12 @@
 
 ## 提给上游的改动
 
-截至 2026-10-14：xiaozhi-esp32-server 已合并 2 个、待合并 1 个；qwen3-tts.cpp 2 个待回复、3 个分支未提。
+截至 2026-10-14：xiaozhi-esp32-server 3 个全部合并；qwen3-tts.cpp 2 个待回复、3 个分支未提。
 
 | 上游 | PR / 分支 | 内容 | 状态 |
 |---|---|---|---|
 | xiaozhi-esp32-server | [#3411](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3411) | FunASR 的 JSON 原样进入对话历史 | 已合并（10-13） |
-| xiaozhi-esp32-server | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice 日语识别结果按词带空格 | 待合并 |
+| xiaozhi-esp32-server | [#3412](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3412) | SenseVoice 日语识别结果按词带空格 | 已合并（10-14） |
 | xiaozhi-esp32-server | [#3413](https://github.com/xinnan-tech/xiaozhi-esp32-server/pull/3413) | TTS 分句在引号内切开句子 | 已合并（10-12） |
 | qwen3-tts.cpp | [#5](https://github.com/Danmoreng/qwen3-tts.cpp/pull/5)（`utf8-paths`） | 模型、声音提示、参考音路径按 UTF-8 打开 | 待回复 |
 | qwen3-tts.cpp | [#6](https://github.com/Danmoreng/qwen3-tts.cpp/pull/6)（`c-bridge-guards`） | C 边界捕获异常、导出结构体 ABI 表、不依赖 JNI 的 C 桥接库选项 | 待回复 |
