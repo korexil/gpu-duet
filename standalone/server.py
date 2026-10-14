@@ -11,6 +11,8 @@ for a status page.
 import argparse
 import asyncio
 import copy
+import hmac
+import ipaddress
 import json
 import logging
 import socket
@@ -20,6 +22,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -59,6 +62,9 @@ DEFAULTS = {
     'idle_close_s': 0,            # 0 = stay connected and keep listening; >0 = close after that many silent seconds
     'ws_ping_interval': 20,
     'ws_ping_timeout': 60,
+    # /status, /dashboard and /events show what is being said. From this machine they are always open;
+    # from other machines they need the token, or remote: true when there is no token.
+    'dashboard': {'remote': False},
 }
 
 
@@ -173,6 +179,33 @@ class Context:
         }
 
 
+def is_loopback(address):
+    try:
+        return ipaddress.ip_address(str(address).split('%')[0]).is_loopback
+    except ValueError:
+        return False
+
+
+def token_ok(cfg, authorization, path):
+    """Bearer header or ?token= in the URL (the dashboard page passes its own query on to /events)."""
+    token = cfg.get('token') or ''
+    if not token:
+        return False
+    given = (authorization or '').removeprefix('Bearer ').strip()
+    given = given or (parse_qs(urlsplit(path).query).get('token') or [''])[0]
+    return hmac.compare_digest(given.encode(), token.encode())
+
+
+def private_allowed(cfg, client, authorization, path):
+    """Who may see /status, /dashboard and /events: this machine, a valid token, or anyone if
+    dashboard.remote is set and no token is configured."""
+    if is_loopback(client):
+        return True
+    if cfg.get('token'):
+        return token_ok(cfg, authorization, path)
+    return bool((cfg.get('dashboard') or {}).get('remote'))
+
+
 def make_http_server(ctx, host, port):
     """OTA and status over plain HTTP. websockets' process_request cannot take a request body, and the
     firmware POSTs its device info to the OTA endpoint, so this runs on its own port (xiaozhi uses 8003 too)."""
@@ -196,9 +229,14 @@ def make_http_server(ctx, host, port):
             length = int(self.headers.get('Content-Length') or 0)
             if length:
                 self.rfile.read(min(length, 1 << 16))
+            allowed = private_allowed(ctx.cfg, self.client_address[0], self.headers.get('Authorization'), self.path)
             if path.startswith('/xiaozhi/ota'):
                 self._reply(HTTPStatus.OK, ctx.ota_payload(self.headers.get('Host')))
-            elif path in ('/', '/health', '/status'):
+            elif path in ('/', '/health'):
+                self._reply(HTTPStatus.OK, ctx.status() if allowed else {'ok': True})
+            elif path in ('/status', '/dashboard', '/events') and not allowed:
+                self._reply(HTTPStatus.FORBIDDEN, {'error': 'forbidden: open it on this machine, or pass the token'})
+            elif path == '/status':
                 self._reply(HTTPStatus.OK, ctx.status())
             elif path == '/dashboard':
                 dashboard.serve_page(self)
@@ -218,9 +256,15 @@ def make_process_request(ctx):
         if 'upgrade' in request.headers.get('Connection', '').lower():
             return None
         path = request.path.split('?')[0]
+        allowed = private_allowed(ctx.cfg, (connection.remote_address or ('',))[0],
+                                  request.headers.get('Authorization'), request.path)
         if path.startswith('/xiaozhi/ota'):
             body = ctx.ota_payload(request.headers.get('Host'))
-        elif path in ('/', '/health', '/status'):
+        elif path in ('/', '/health'):
+            body = ctx.status() if allowed else {'ok': True}
+        elif path == '/status':
+            if not allowed:
+                return connection.respond(HTTPStatus.FORBIDDEN, 'forbidden\n')
             body = ctx.status()
         else:
             return connection.respond(HTTPStatus.NOT_FOUND, 'not found\n')
@@ -233,7 +277,7 @@ def make_process_request(ctx):
 def make_handler(ctx):
     async def handler(ws):
         token = ctx.cfg.get('token')
-        if token and ws.request.headers.get('Authorization', '') != f'Bearer {token}':
+        if token and not token_ok(ctx.cfg, ws.request.headers.get('Authorization'), ''):
             log.warning('rejected %s: bad token', ws.remote_address)
             await ws.close(1008, 'unauthorized')
             return
@@ -259,6 +303,9 @@ async def run_server(ctx, ready=None):
             ctx.ws_port = server.sockets[0].getsockname()[1]
             if ready is not None:
                 ready.set_result(server)
+            if not cfg.get('token') and listen['host'] in ('0.0.0.0', '::', ''):
+                log.warning('listening on all interfaces with no token: any device on this network can connect. '
+                            'Fine on a trusted LAN; set token (and a firewall) before exposing it further')
             shown = cfg['advertise_host'] or lan_ip()
             log.info('websocket on %s:%s, http on :%s  ->  point the device OTA at http://%s:%s/xiaozhi/ota/',
                      listen['host'], listen['port'], ctx.http_port, shown, ctx.http_port)

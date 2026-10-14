@@ -128,6 +128,7 @@ python standalone\server.py
 - 实机只测过 RTX 4060 Laptop + Windows 11；Linux 只在 CI 里验证到能编译，macOS 没测过。
 - `llamacpp_paced` 不支持工具调用（MCP、设备音量等）；独立服务端没有声纹、记忆和流式 ASR。
 - 句间响度只按每句开头 0.6 s 定增益，不是响度标准。
+- 独立服务端默认只适合受信任的局域网（明文、token 默认为空），不要直接暴露到公网，见[安全](standalone/README.md#安全)。
 
 完整列表：[docs/architecture.md](docs/architecture.md#限制)。
 

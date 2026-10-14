@@ -355,3 +355,24 @@ def test_chunk_tail_silence_is_trimmed_to_the_configured_pause(stack):
     # two chunks of 0.3 s tone + 0.5 s silence each (within tail_hold_ms): each silence is cut to 0.12 s
     assert len(pcm) / 24000 < 2 * (0.3 + 0.12) + 0.06
     assert np.abs(pcm[:7000]).max() > 500
+
+
+def test_private_endpoints_need_this_machine_or_the_token():
+    allowed = standalone.private_allowed
+    lan = '192.168.1.20'
+    assert allowed({'token': ''}, '127.0.0.1', None, '/dashboard')
+    assert allowed({'token': ''}, '::1', None, '/events')
+    assert not allowed({'token': '', 'dashboard': {'remote': False}}, lan, None, '/dashboard')
+    assert allowed({'token': '', 'dashboard': {'remote': True}}, lan, None, '/dashboard')
+    cfg = {'token': 's3cret', 'dashboard': {'remote': True}}       # with a token, remote: true does not open it
+    assert not allowed(cfg, lan, None, '/events')
+    assert not allowed(cfg, lan, 'Bearer wrong', '/events')
+    assert allowed(cfg, lan, 'Bearer s3cret', '/events')
+    assert allowed(cfg, lan, None, '/events?token=s3cret')
+    assert not allowed(cfg, lan, None, '/events?token=s3cre')
+
+
+def test_websocket_token_check_uses_the_same_rule():
+    assert standalone.token_ok({'token': 'abc'}, 'Bearer abc', '')
+    assert not standalone.token_ok({'token': 'abc'}, 'Bearer abd', '')
+    assert not standalone.token_ok({'token': ''}, 'Bearer ', '')

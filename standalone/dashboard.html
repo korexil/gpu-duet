@@ -65,7 +65,7 @@ function reset() {
 }
 function now() { return Date.now() / 1000 + offset; }
 
-const es = new EventSource('/events');
+const es = new EventSource('/events' + location.search);
 es.onopen = () => $('conn').textContent = '已连接';
 es.onerror = () => $('conn').textContent = '连接断开，重连中…';
 es.onmessage = e => {
