@@ -1,0 +1,69 @@
+# gpu-duet standalone server. Copy to config.yaml and edit. Paths are relative to this file.
+
+listen:
+  host: 0.0.0.0
+  port: 8000                     # 设备 WebSocket
+  http_port: 8003                # OTA 应答和状态页
+# advertise_host: 192.168.1.10   # 写进 OTA 应答的地址；留空用设备请求时的 Host
+# advertise_port: 8000          # 前面有端口转发时，OTA 应答里写的 WebSocket 端口；留空用 listen.port
+token: ""                        # 非空时设备必须带 Authorization: Bearer <token>
+
+llm:
+  base_url: http://127.0.0.1:18080   # llama-server（scripts/start-llm.ps1）
+  max_tokens: 1500                   # 讲故事要一次讲完，别卡在 400 个 token 上让人追问“然后呢”
+  temperature: 0.8
+  # provider 自己的 GPU 轮流在这里用不上：独立服务端里 LLM 和 TTS 本来就串行，开了只会白等
+  turn_taking: false
+  chunk_tokens: 16
+  # 只为听对比：true 时 LLM 不等 TTS、一直往前写，和 TTS 同时占 GPU，就是没有 gpu-duet 的样子
+  overlap: false
+
+# 面板左上角的标签：origin / engine / overlap / duet；留空按 llm.overlap 自动判断。只影响 /dashboard 的显示
+# dashboard_mode: duet
+
+tts:
+  base_url: http://127.0.0.1:18766   # tts-service/server.py
+  sample_rate: 24000
+
+asr:
+  model_dir: models/sense-voice       # python setup_models.py 下载到这里
+  vad_model: models/silero_vad.onnx
+  language: zh                        # zh en ja ko yue；auto 会把短句（比如唤醒词）误判成别的语种，尽量写死
+  threads: 2
+  denoise: true                       # 送识别前用 GTCRN 降噪（麦克风底噪大的板子明显有用；干净环境可关）
+  denoise_model: models/gtcrn_simple.onnx
+
+splitter:                 # 回答怎么切给 TTS。每一段是独立的一次合成，语调接不上，所以切得越少越自然
+  min_chars: 30           # 攒够这么多字才在句号处切：一段一两句。太短语调割裂，太长（>70 字）模型会变成一字一句地念
+  max_chars: 70           # 超过这个长度在逗号处也切
+  first_min_chars: 12     # 第一段：过了这么多字遇到句号就先切出去，首声早一点；后面的段才按 min_chars 攒
+  first_cut_chars: 0      # >0 时第一段最早在这么多字后的逗号处切出，首声更快但句子割裂；0=不用
+
+prompt: |
+  你是一个在本地电脑上运行的语音助手。平时聊天回答口语化、简短，两三句话说完；对方让你讲故事、讲解或要求详细时，一次讲完整，不要中途停下来问要不要继续。不用列表、标题和表情符号，全部用能念出来的自然句子。
+history_turns: 10                     # 对话里保留的轮数
+
+wake:
+  words: ["你好小智", "小智小智", "嘿你好"]   # 设备固件里的唤醒词；设备报上来的文字匹配到就当唤醒
+  ack: "嗯？"                           # 听到唤醒词先应一声（启动时合成一次缓存）；留空不应
+  device_text: chat                    # 设备以文本形式发来的话（固件里按键/传感器触发的那种）：chat=当用户说的，ignore=丢掉
+
+voice:
+  end_silence_ms: 700     # 停顿这么久算说完
+  min_voice_ms: 250       # 短于这个的声音不送识别
+  preroll_ms: 600         # 判定开口前补回的音频（含说完后保护窗口里的），避免句首掉字
+  max_utterance_s: 20
+  guard_ms: 500           # 说完后再捂住麦克风这么久（喇叭余音、设备缓冲）
+  barge_in: false         # 只有设备自带回声消除时才开：我说话时听到人声就停下
+  barge_in_ms: 600
+  chunk_pause_ms: 400     # 段与段之间留多长停顿：tts-service 每段结尾补的静音在发帧前修剪到这个长度
+  tail_hold_ms: 1200      # 为了修剪尾部静音，每段最后这么长先扣着不发（不影响首声，只是尾巴晚一点发）
+  agc:                    # 发给板子前的慢速自动增益：模型一句话里忽大忽小时补平，不加延迟
+    enabled: true
+    target_db: -20        # 目标响度（dBFS RMS）
+    attack_db_s: 60       # 压小的速度（dB/s）：开头突然变响时立刻压住
+    release_db_s: 6       # 抬高的速度（dB/s）：慢慢升，避免抽吸感
+    max_boost_db: 8
+    max_cut_db: 10
+
+idle_close_s: 0           # 0=一直连着、一直听，开口就答，不用再喊唤醒词；想省电或要唤醒词模式就填秒数（如 120），没人说话这么久就断开回待机

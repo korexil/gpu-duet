@@ -4,3 +4,7 @@ __pycache__/
 probe-out/
 samples/
 result-*.json
+
+# standalone server: downloaded models and the local config
+standalone/models/
+standalone/config.yaml
