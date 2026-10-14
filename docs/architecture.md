@@ -129,4 +129,5 @@ standalone 里 LLM 的输出是在合成线程里逐段拉取的：一段文字�
 - 实机只测过 RTX 4060 Laptop + Windows 11；Linux 只在 CI 里验证到能编译，macOS 没测过（CI 另在 Linux 上核对 ABI）。
 - `llamacpp_paced` 不支持工具调用；standalone 忽略 `mcp` 消息，没有声纹、记忆、流式 ASR（整句说完才识别）、固件升级分发。
 - 句间响度只按每句开头 0.6 s 的 RMS 定增益，4.6 → 3.7 dB，不是响度标准。
+- 独立服务端只适合受信任的局域网：明文 `ws://` / `http://`，没有 TLS 和限流；token 默认为空。面板等会显示对话内容的端点默认只对本机开放。见 [standalone/README.md](../standalone/README.md#安全)。
 - LLM 用的是非官方的 `xbill9/gemma-4-E4B-it-qat-q4_0-exact-gguf`；Google 官方 QAT GGUF 没测过。

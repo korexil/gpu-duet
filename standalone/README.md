@@ -53,7 +53,7 @@ python standalone\loopback.py --wav question.wav --out reply.wav      # 真走 O
 
 ## 看它在干什么
 
-`http://<本机IP>:8003/dashboard` 是一个实时面板：问题、每 60 ms 一帧的下行音频波形、首声时刻、断音（按设备预缓冲估计，标红）、当前句字幕，右侧是内存、显存和 GPU 占用。中途打开也能补上当前这轮回答。数据来自 `/events`（server-sent events，JSON 行），拿来录演示视频或者自己画图都行。
+`http://127.0.0.1:8003/dashboard`（在跑服务端的这台电脑上打开）是一个实时面板：问题、每 60 ms 一帧的下行音频波形、首声时刻、断音（按设备预缓冲估计，标红）、当前句字幕，右侧是内存、显存和 GPU 占用。中途打开也能补上当前这轮回答。数据来自 `/events`（server-sent events，JSON 行），拿来录演示视频或者自己画图都行。
 
 对比用的两个开关，正常使用都不用动：`llm.overlap: true` 让 LLM 不等 TTS、一直往前写，和 TTS 同时抢 GPU，就是没有轮流调度时的样子；`dashboard_mode` 只改面板左上角的标签（`origin` / `engine` / `overlap` / `duet`），留空按 `llm.overlap` 自动判断。
 
@@ -77,7 +77,8 @@ python standalone\loopback.py --wav question.wav --out reply.wav      # 真走 O
 |---|---|---|
 | `listen.port` / `listen.http_port` | 8000 / 8003 | WebSocket / HTTP（OTA、状态、面板） |
 | `advertise_host` / `advertise_port` | 空 / 0 | 写进 OTA 应答的地址，前面有端口转发时用；空 / 0 = 设备请求时的 Host / `listen.port` |
-| `token` | 空 | 非空时设备必须带 `Authorization: Bearer <token>` |
+| `token` | 空 | 非空时设备必须带 `Authorization: Bearer <token>`，别的机器看面板要带 `?token=`（见[安全](#安全)） |
+| `dashboard.remote` | `false` | 没设 token 时是否让别的机器看 `/status`、`/dashboard`、`/events` |
 | `asr.language` | `zh` | 别用 `auto`：短句（如唤醒词）会被判成别的语种 |
 | `asr.denoise` | `true` | 送识别前整句过 GTCRN（模型缺失时警告并跳过） |
 | `splitter.first_min_chars` / `min_chars` / `max_chars` | 12 / 30 / 70 | 第一段过 12 字遇句末就切；之后攒够 30 字才在句末切；超过 70 字在逗号处切；引号、括号内不切 |
@@ -99,11 +100,23 @@ python standalone\loopback.py --wav question.wav --out reply.wav      # 真走 O
 | 端点 | 说明 |
 |---|---|
 | `/xiaozhi/ota/` | GET / POST，返回 WebSocket 地址 |
-| `/`、`/health`、`/status` | LLM、TTS 是否在线，会话数 |
+| `/`、`/health` | 本机访问：LLM、TTS 是否在线，会话数；别的机器只得到 `{"ok": true}` |
+| `/status` | 同上的完整状态，访问规则同面板 |
 | `/dashboard` | 实时面板：问题、每帧下行电平、首声、断音、当前句、内存 / 显存 / GPU 占用 |
 | `/events` | SSE，JSON 行；中途打开会先补发当前这轮 |
 
-WebSocket 端口（8000）上不带 Upgrade 的 GET 也能回 OTA 和状态。`-v` 时每 5 秒记一行上行音频统计（帧数、有声帧、峰值、VAD 最高概率、底噪主频）。
+WebSocket 端口（8000）上不带 Upgrade 的 GET 也能回 OTA 和状态，规则相同。
+
+`/status`、`/dashboard`、`/events` 会显示提问和回答的内容，所以本机随便看，别的机器要满足其一：带 token（`Authorization: Bearer <token>` 或 `?token=<token>`，面板页会把自己的 `?token=` 带给 `/events`）；没设 token 时在配置里写 `dashboard.remote: true`。OTA 地址不受限，板子开机要用它。`-v` 时每 5 秒记一行上行音频统计（帧数、有声帧、峰值、VAD 最高概率、底噪主频）。
+
+## 安全
+
+默认配置是给受信任的局域网用的：两个端口监听 `0.0.0.0`（板子要连进来），`token` 为空，任何同网段设备都能连 WebSocket 对话。启动时没设 token 会打一条警告。
+
+- 设 `token`：设备的 WebSocket 必须带 `Authorization: Bearer <token>`（xiaozhi 固件里配置），别的机器看面板要带 `?token=<token>`。token 用常量时间比较。
+- 只在本机测试（比如用 `loopback.py`）时把 `listen.host` 改成 `127.0.0.1`。
+- 用防火墙只放行局域网网段的 TCP 8000、8003。
+- 不要直接暴露到公网：服务端只说明文 `ws://` 和 `http://`，没有 TLS，也没有限流。确实要远程用，放在带 TLS 和身份验证的反向代理（`wss://` / `https://`）或 VPN 后面。
 
 ## 没做的
 

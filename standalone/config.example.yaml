@@ -1,12 +1,14 @@
 # gpu-duet standalone server. Copy to config.yaml and edit. Paths are relative to this file.
 
 listen:
-  host: 0.0.0.0
+  host: 0.0.0.0                  # 板子要从局域网连进来；只在本机测试时可改成 127.0.0.1
   port: 8000                     # 设备 WebSocket
   http_port: 8003                # OTA 应答和状态页
 # advertise_host: 192.168.1.10   # 写进 OTA 应答的地址；留空用设备请求时的 Host
 # advertise_port: 8000          # 前面有端口转发时，OTA 应答里写的 WebSocket 端口；留空用 listen.port
-token: ""                        # 非空时设备必须带 Authorization: Bearer <token>
+token: ""                        # 非空时：设备 WebSocket 要带 Authorization: Bearer <token>；别的机器看面板要带 ?token=<token>
+# dashboard:
+#   remote: false                # /status、/dashboard、/events 会显示对话内容，默认只对本机开放；没设 token 时设 true 才对局域网开放
 
 llm:
   base_url: http://127.0.0.1:18080   # llama-server（scripts/start-llm.ps1）
