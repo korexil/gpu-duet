@@ -6,14 +6,22 @@
 
 *A local LLM and a zero-shot voice-cloning TTS take turns on one 8 GB GPU. Use them as local HTTP services, or as an offline voice server for ESP32 boards running xiaozhi firmware.*
 
+[效果](#效果) · [原理](#原理) · [需要什么](#需要什么) · [快速开始](#快速开始) · [接板子](#接板子用法-b) · [已知限制](#已知限制) · [上游修复](#提给上游的修复) · [文档](#文档) · [32 条踩坑](docs/pitfalls.md)
+
 [![CI](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/korexil/gpu-duet)](https://github.com/korexil/gpu-duet/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Bilibili](https://img.shields.io/badge/演示视频-Bilibili-00A1D6)](https://www.bilibili.com/video/BV15Cpr6eEMx)
 
-<a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/demo-video.jpg" alt="演示视频：同一台 RTX 4060 Laptop 和同一块 ESP32 板子上，从每句都卡到长回答不断音（B 站，3 分 28 秒）" width="640"></a>
+| 首声 | 断音合计 | 显存 |
+|:-:|:-:|:-:|
+| 6.2&nbsp;→&nbsp;**2.1&nbsp;s** | 4.22&nbsp;→&nbsp;**0.17&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
 
-<sub>实机录像。提问是现场实时问的，视频里的提问声后来换成了合成声；板子的回答是现场原声。</sub>
+<a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/before-after.webp" alt="实机录像：同一台笔记本、同一个问题。之前首声 5.95 s、红色断音竖条越来越多；之后首声 1.92 s，一路是绿色波形" width="760"></a>
+
+<sub>实机录像，2 倍速，红色竖条是声音断掉的地方。点图看完整视频（B 站 3 分 28 秒）：提问是现场实时问的，视频里的提问声后来换成了合成声；板子的回答是现场原声。</sub>
+
+**不接板子先试一下：** Windows + NVIDIA 8 GB 显卡 + 一段 3～10 秒的录音，按[快速开始](#快速开始)第 1～5 步走，最后一步直接打印断音合计。
 
 ## 能做什么
 
@@ -117,7 +125,7 @@ python tools\turn_taking_sim.py --mode turns --question "说说你最喜欢的�
 
 到这一步就是用法 A：自己的程序调 `http://127.0.0.1:18766/stream` 合成语音，接口见 [tts-service/README.md](tts-service/README.md)。
 
-**6. 接板子（用法 B）。**
+### 接板子（用法 B）
 
 ```powershell
 pip install -r standalone\requirements.txt

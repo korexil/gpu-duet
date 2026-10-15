@@ -6,14 +6,22 @@
 
 *A local LLM and a zero-shot voice-cloning TTS take turns on one 8 GB GPU. Use them as local HTTP services, or as an offline voice server for ESP32 boards running xiaozhi firmware.*
 
+[Results](#results) · [How it works](#how-it-works) · [Requirements](#requirements) · [Quick start](#quick-start) · [Connect a board](#connect-a-board-mode-b) · [Known limitations](#known-limitations) · [Upstream fixes](#fixes-sent-upstream) · [Docs](#documentation) · [32 pitfalls](docs/pitfalls.md)
+
 [![CI](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/korexil/gpu-duet)](https://github.com/korexil/gpu-duet/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Bilibili](https://img.shields.io/badge/Demo_video-Bilibili-00A1D6)](https://www.bilibili.com/video/BV15Cpr6eEMx)
 
-<a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/demo-video.jpg" alt="Demo video: same RTX 4060 Laptop, same ESP32 board, going from a stall on every sentence to long answers with no gaps (Bilibili, 3 min 28 s)" width="640"></a>
+| First word | Total gaps | VRAM |
+|:-:|:-:|:-:|
+| 6.2&nbsp;→&nbsp;**2.1&nbsp;s** | 4.22&nbsp;→&nbsp;**0.17&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
 
-<sub>Real-device recording. The questions were asked live; their audio was later replaced with a synthesized voice. The board's answers are the live audio.</sub>
+<a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/before-after.en.webp" alt="Live recording, same laptop, same question. Before: first word at 5.95 s, then a stall in almost every sentence. After: first word at 1.92 s, one 0.1 s stall in the whole answer" width="760"></a>
+
+<sub>Live recording at 2× speed, same laptop and same question; red bars are where the audio stalled. Click for the full video (Bilibili, 3 min 28 s, in Chinese). The questions were asked live and their audio was later replaced with a synthesized voice; the board's answers are the live audio.</sub>
+
+**Try it without a board:** Windows + an 8 GB NVIDIA GPU + a 3–10 s voice recording. Follow [Quick start](#quick-start) steps 1–5; the last step prints the total gap time.
 
 ## What it does
 
@@ -118,7 +126,7 @@ python tools\turn_taking_sim.py --mode turns --question "说说你最喜欢的�
 
 At this point you have mode A: your own programs call `http://127.0.0.1:18766/stream` to synthesize speech. API reference: [tts-service/README.md](tts-service/README.md).
 
-**6. Connect a board (mode B).**
+### Connect a board (mode B)
 
 ```powershell
 pip install -r standalone\requirements.txt
