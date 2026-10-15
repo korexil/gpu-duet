@@ -6,14 +6,22 @@
 
 *ローカル LLM とゼロショット音声クローン TTS が、8 GB の GPU 1 枚を交代で使います。ローカル HTTP サービスとして使うことも、xiaozhi ファームウェアを載せた ESP32 ボード向けのオフライン音声サーバーとして使うこともできます。*
 
+[効果](#効果) · [仕組み](#仕組み) · [必要なもの](#必要なもの) · [クイックスタート](#クイックスタート) · [ボードをつなぐ](#ボードをつなぐ使い方-b) · [既知の制限](#既知の制限) · [上流への修正](#上流への修正) · [ドキュメント](#ドキュメント) · [ハマりどころ 32 件](docs/pitfalls.md)
+
 [![CI](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/korexil/gpu-duet)](https://github.com/korexil/gpu-duet/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Bilibili](https://img.shields.io/badge/デモ動画-Bilibili-00A1D6)](https://www.bilibili.com/video/BV15Cpr6eEMx)
 
-<a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/demo-video.jpg" alt="デモ動画：同じ RTX 4060 Laptop と同じ ESP32 ボードで、毎文ごとに途切れていた状態から長い回答でも音切れしない状態へ（Bilibili、3 分 28 秒）" width="640"></a>
+| 最初の一声 | 音切れ合計 | VRAM |
+|:-:|:-:|:-:|
+| 6.2&nbsp;→&nbsp;**2.1&nbsp;s** | 4.22&nbsp;→&nbsp;**0.17&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
 
-<sub>実機での録画です。質問はその場でリアルタイムに話したもので、動画では質問の声だけ後から合成音声に差し替えています。ボードの回答はその場の音声そのままです。</sub>
+<a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/before-after.ja.webp" alt="実機の録画、同じノート PC・同じ質問。改善前は最初の一声 5.95 s、その後ほぼ毎文で途切れる。改善後は 1.92 s、回答全体で途切れは 1 回（0.1 s）だけ" width="760"></a>
+
+<sub>実機の録画（2 倍速）、同じノート PC・同じ質問。赤いバーは音が途切れたところです。画像をクリックすると完全版の動画（Bilibili、3 分 28 秒、中国語）。質問はその場でリアルタイムに話したもので、動画では質問の声だけ後から合成音声に差し替えています。ボードの回答はその場の音声そのままです。</sub>
+
+**ボードなしで試す：** Windows + NVIDIA 8 GB GPU + 3～10 秒の録音があれば、[クイックスタート](#クイックスタート)の手順 1～5 で動きます。最後の手順で音切れの合計が表示されます。
 
 ## できること
 
@@ -118,7 +126,7 @@ python tools\turn_taking_sim.py --mode turns --question "说说你最喜欢的�
 
 ここまでで使い方 A の状態です。自作プログラムから `http://127.0.0.1:18766/stream` を呼べば音声を合成できます。API は [tts-service/README.md](tts-service/README.md) を参照してください。
 
-**6. ボードをつなぐ（使い方 B）。**
+### ボードをつなぐ（使い方 B）
 
 ```powershell
 pip install -r standalone\requirements.txt
