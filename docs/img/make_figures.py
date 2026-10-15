@@ -119,9 +119,10 @@ def vram():
 # Same question ("a ~300-character story"), same cloned voice, same standalone pipeline,
 # two runs per stage, 2026-10-14. Gaps are estimated against the device's 0.3 s pre-buffer
 # (standalone/session.py Pacer). (first audio s, gap count, gap total s) per run.
+# The first "换引擎" run is dropped: its record mixed two answers (see docs/benchmarks.md).
 STAGES = [
     ("起点", "PyTorch TTS · LLM 在 CPU", [(6.67, 54, 3.68), (5.81, 58, 4.75)]),
-    ("换引擎", "原生 TTS · LLM 在 CPU", [(5.18, 28, 55.89), (5.56, 3, 0.18)]),
+    ("换引擎", "原生 TTS · LLM 在 CPU", [(5.56, 3, 0.18)]),
     ("LLM 上 GPU", "两者同时用 GPU", [(4.19, 10, 2.08), (4.33, 8, 2.69)]),
     ("轮流", "LLM 写完一句等 TTS", [(2.09, 1, 0.13), (2.12, 2, 0.20)]),
 ]
@@ -146,7 +147,7 @@ def stages():
     for title, index, top, fmt in metrics:
         sx = lambda v: x0 + (x1 - x0) * min(v, top) / top
         body.append(t(0, y + 16, title, 15, weight=600))
-        body.append(t(480, y + 16, "每阶段两次，各画一条", 12, "muted", "end"))
+        body.append(t(480, y + 16, "每阶段两次，各画一条；换引擎一次作废", 12, "muted", "end"))
         y += 28
         for name, note, runs in STAGES:
             body.append(t(0, y + 15, name, 13, weight=600))
