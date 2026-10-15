@@ -25,7 +25,7 @@
 
 ## What it does
 
-- **Two models on one 8 GB GPU**: Gemma 4 E4B (LLM) + Qwen3-TTS 1.7B (clones a voice from a 3–10 s recording), about 7.3 GB of VRAM in total.
+- **Two models on one 8 GB GPU**: Gemma 4 E4B (LLM) + Qwen3-TTS 1.7B (clones a voice from a 3–10 s recording), about 7.3 GB of VRAM in use on the whole card (about 6.8 GB for the two models, the rest is the desktop and other processes).
 - **The LLM and the TTS take turns on the GPU**: a long answer of over a minute plays while it is being generated, and total gap time drops from 4.22 s to 0.17 s.
 - **Per-sentence shaping**: after each sentence is synthesized, its loudness, pauses and peaks are evened out, so a small speaker doesn't jump between loud and quiet or clip.
 - **Fully offline, on a single Windows PC**: use it as an ordinary local HTTP service, or as the server for xiaozhi ESP32 boards.
