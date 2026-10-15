@@ -15,7 +15,7 @@
 
 | 首声 | 断音合计 | 显存 |
 |:-:|:-:|:-:|
-| 6.2&nbsp;→&nbsp;**2.1&nbsp;s** | 4.22&nbsp;→&nbsp;**0.17&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
+| 4.4&nbsp;→&nbsp;**2.3&nbsp;s** | 4.59&nbsp;→&nbsp;**0.09&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
 
 <a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/before-after.webp" alt="实机录像：同一台笔记本、同一个问题。之前首声 5.95 s、红色断音竖条越来越多；之后首声 1.92 s，一路是绿色波形" width="760"></a>
 
@@ -26,7 +26,7 @@
 ## 能做什么
 
 - **一块 8 GB 显卡装下两个模型**：Gemma 4 E4B（LLM）+ Qwen3-TTS 1.7B（用 3～10 秒录音克隆声音），整卡显存占用约 7.3 GB（两个模型约 6.8 GB，其余是桌面等）。
-- **LLM 和 TTS 轮流用 GPU**：一分多钟的长回答边生成边播放，断音合计从 4.22 s 降到 0.17 s。
+- **LLM 和 TTS 轮流用 GPU**：一分多钟的长回答边生成边播放，断音合计从 4.59 s 降到 0.09 s（整套改动：换原生引擎 + 轮流）。
 - **逐句整形**：每句合成后统一响度、停顿和峰值，小喇叭上不忽大忽小、不爆音。
 - **全部离线，跑在一台 Windows 电脑上**：可以当普通的本地 HTTP 服务用，也可以直接给 ESP32 小智板子当服务端。
 
@@ -34,11 +34,11 @@
 
 | | 之前 | 之后 |
 |---|---|---|
-| 长回答首声（问完到第一声） | 6.2 s | **2.1 s** |
-| 长回答断音合计（播放中卡住的时长） | 4.22 s，卡 50 多次 | **0.17 s** |
+| 长回答首声（问完到第一声） | 4.4 s | **2.3 s** |
+| 长回答断音合计（播放中卡住的时长） | 4.59 s，卡 48～60 次 | **0.09 s** |
 | 显存合计（8 GB 卡） | 约 8.3 GB，装不下（未打补丁的原生引擎，推算） | **约 7.3 GB** |
 
-<sub>RTX 4060 Laptop 8 GB。首声、断音：同一个长回答问题各问两次取平均，「之前」是 PyTorch 版 TTS + CPU 上的 LLM。显存：「之后」是实测 7,448 MiB，「之前」是再加上补丁省下的 488 + 594 MiB 推算出来的；GB 按任务管理器的口径（1 GB = 1024 MiB）。只改调度的对照实验（每组 6 次）里，轮流前 6/6 次有断音，轮流后 0/6。全部数据：[docs/benchmarks.md](docs/benchmarks.md)。</sub>
+<sub>RTX 4060 Laptop 8 GB。首声、断音：同一个长回答问题各问三次取平均（四个阶段在同一时段测完），文字提问（首声不含 VAD 和 ASR），断音由服务端按设备 0.3 s 预缓冲估算，「之前」是 PyTorch 版 TTS + CPU 上的 LLM。显存：「之后」是实测 7,448 MiB，「之前」是再加上补丁省下的 488 + 594 MiB 推算出来的；GB 按任务管理器的口径（1 GB = 1024 MiB）。只改调度的对照实验（每组 6 次）里，轮流前 6/6 次有断音，轮流后 0/6。全部数据：[docs/benchmarks.md](docs/benchmarks.md)。</sub>
 
 ## 和小智（xiaozhi）的关系
 
@@ -77,7 +77,7 @@
 |---|---|
 | 显卡 | NVIDIA，8 GB 显存（实测 RTX 4060 Laptop；预编译引擎支持 RTX 20 / 30 / 40 / 50 系） |
 | 内存 | 16 GB |
-| 系统 | Windows 10 / 11 x64（实测 Windows 11；Linux 只在 CI 里验证到能编译） |
+| 系统 | Windows 10 / 11 x64（实测 Windows 11；Linux 上 CI 只编译 CPU 版 C 桥接库并核对 ABI，CUDA 引擎和整条管线没在 Linux 上跑过） |
 | 磁盘 | 约 13 GB（模型下载约 8.8 GB） |
 | 声音 | 一段 3～10 秒的干净录音和它的逐字文本（[怎么准备](docs/voice-reference.md)） |
 | 板子（可选） | ESP32-S3，刷 xiaozhi-esp32 固件（实测 M5Stack Atom EchoS3R、Stack-chan） |
@@ -140,7 +140,7 @@ python standalone\server.py
 
 ## 已知限制
 
-- 实机只测过 RTX 4060 Laptop + Windows 11；Linux 只在 CI 里验证到能编译，macOS 没测过。
+- 实机只测过 RTX 4060 Laptop + Windows 11。Linux 上 CI 只编译 CPU 版 C 桥接库并核对 ABI，CUDA 引擎和整条管线没在 Linux 上跑过；macOS 没测过。
 - `llamacpp_paced` 不支持工具调用（MCP、设备音量等）；独立服务端没有声纹、记忆和流式 ASR。
 - 句间响度只按每句开头 0.6 s 定增益，不是响度标准。
 - 独立服务端默认只适合受信任的局域网（明文、token 默认为空），不要直接暴露到公网，见[安全](standalone/README.md#安全)。

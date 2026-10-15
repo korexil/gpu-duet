@@ -116,15 +116,14 @@ def vram():
     write("vram", 480, 192, body)
 
 
-# Same question ("a ~300-character story"), same cloned voice, same standalone pipeline,
-# two runs per stage, 2026-10-14. Gaps are estimated against the device's 0.3 s pre-buffer
-# (standalone/session.py Pacer). (first audio s, gap count, gap total s) per run.
-# The first "换引擎" run is dropped: its record mixed two answers (see docs/benchmarks.md).
+# Same question, same cloned voice, same standalone pipeline, three runs per stage, all four
+# stages in one sitting on 2026-10-16 (raw records: bench/results/stages-2026-10-16.txt). Gaps are estimated against
+# the device's 0.3 s pre-buffer (standalone/session.py Pacer). (first audio s, gap count, gap total s).
 STAGES = [
-    ("起点", "PyTorch TTS · LLM 在 CPU", [(6.67, 54, 3.68), (5.81, 58, 4.75)]),
-    ("换引擎", "原生 TTS · LLM 在 CPU", [(5.56, 3, 0.18)]),
-    ("LLM 上 GPU", "两者同时用 GPU", [(4.19, 10, 2.08), (4.33, 8, 2.69)]),
-    ("轮流", "LLM 写完一句等 TTS", [(2.09, 1, 0.13), (2.12, 2, 0.20)]),
+    ("起点", "PyTorch TTS · LLM 在 CPU", [(6.00, 48, 3.91), (3.49, 60, 5.10), (3.85, 54, 4.75)]),
+    ("换引擎", "原生 TTS · LLM 在 CPU", [(5.42, 2, 0.14), (5.21, 0, 0.00), (5.34, 1, 0.01)]),
+    ("LLM 上 GPU", "两者同时用 GPU", [(3.82, 14, 2.85), (3.78, 9, 2.58), (4.07, 17, 3.08)]),
+    ("轮流", "LLM 写完一句等 TTS", [(2.67, 0, 0.00), (1.87, 1, 0.13), (2.25, 1, 0.14)]),
 ]
 
 
@@ -147,8 +146,9 @@ def stages():
     for title, index, top, fmt in metrics:
         sx = lambda v: x0 + (x1 - x0) * min(v, top) / top
         body.append(t(0, y + 16, title, 15, weight=600))
-        body.append(t(480, y + 16, "每阶段两次，各画一条；换引擎一次作废", 12, "muted", "end"))
+        body.append(t(480, y + 16, "每阶段三次，各画一条", 12, "muted", "end"))
         y += 28
+        top_y = y
         for name, note, runs in STAGES:
             body.append(t(0, y + 15, name, 13, weight=600))
             body.append(t(0, y + 31, note, 11, "muted"))
@@ -167,8 +167,8 @@ def stages():
                     body.append(t(sx(top) - 14, by + 10, label + "（超出刻度）", 11, "text", "end", 600))
                 else:
                     body.append(t(sx(value) + 6, by + 10, label, 11, "text", "start", 600))
-            y += 40
-        body.append(f'<line x1="{x0}" y1="{y - 160}" x2="{x0}" y2="{y - 6}" stroke="{{grid}}"/>')
+            y += max(40, 15 * len(runs) + 10)
+        body.append(f'<line x1="{x0}" y1="{top_y}" x2="{x0}" y2="{y - 6}" stroke="{{grid}}"/>')
         y += 14
     body.append(t(0, y + 4, "同一问题 · 同一克隆声音 · 独立服务端 · 断音按设备 0.3 s 预缓冲估计", 11, "muted"))
     write("stages", 480, y + 12, body)
@@ -180,8 +180,8 @@ def before_after():
     first0, first1 = mean([r[0] for r in origin]), mean([r[0] for r in duet])
     gap0, gap1 = mean([r[2] for r in origin]), mean([r[2] for r in duet])
     panels = [
-        ("长回答首声（s）", "越低越好 · 起点→轮流，两次平均", round(first0, 4), round(first1, 4), 7.0, 1),
-        ("长回答断音合计（s）", "越低越好 · 起点→轮流，两次平均", round(gap0, 4), round(gap1, 4), 5.0, 2),
+        ("长回答首声（s）", "越低越好 · 起点→轮流，三次平均", round(first0, 4), round(first1, 4), 7.0, 1),
+        ("长回答断音合计（s）", "越低越好 · 起点→轮流，三次平均", round(gap0, 4), round(gap1, 4), 5.0, 2),
         ("句间响度差（dB）", "越低越好 · 逐句整形", 4.6, 3.7, 6.0, 1),
         ("名字唤醒命中（/60）", "越高越好 · 服务端唤醒", 29, 53, 60, 0),
     ]
