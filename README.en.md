@@ -15,7 +15,7 @@
 
 | First word | Total gaps | VRAM |
 |:-:|:-:|:-:|
-| 6.2&nbsp;→&nbsp;**2.1&nbsp;s** | 4.22&nbsp;→&nbsp;**0.17&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
+| 4.4&nbsp;→&nbsp;**2.3&nbsp;s** | 4.59&nbsp;→&nbsp;**0.09&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
 
 <a href="https://www.bilibili.com/video/BV15Cpr6eEMx"><img src="docs/img/before-after.en.webp" alt="Live recording, same laptop, same question. Before: first word at 5.95 s, then a stall in almost every sentence. After: first word at 1.92 s, one 0.1 s stall in the whole answer" width="760"></a>
 
@@ -26,7 +26,7 @@
 ## What it does
 
 - **Two models on one 8 GB GPU**: Gemma 4 E4B (LLM) + Qwen3-TTS 1.7B (clones a voice from a 3–10 s recording), about 7.3 GB of VRAM in use on the whole card (about 6.8 GB for the two models, the rest is the desktop and other processes).
-- **The LLM and the TTS take turns on the GPU**: a long answer of over a minute plays while it is being generated, and total gap time drops from 4.22 s to 0.17 s.
+- **The LLM and the TTS take turns on the GPU**: a long answer of over a minute plays while it is being generated, and total gap time drops from 4.59 s to 0.09 s (the native engine and turn-taking together).
 - **Per-sentence shaping**: after each sentence is synthesized, its loudness, pauses and peaks are evened out, so a small speaker doesn't jump between loud and quiet or clip.
 - **Fully offline, on a single Windows PC**: use it as an ordinary local HTTP service, or as the server for xiaozhi ESP32 boards.
 
@@ -34,11 +34,11 @@
 
 | | Before | After |
 |---|---|---|
-| Time to first audio on a long answer (end of question to first sound) | 6.2 s | **2.1 s** |
-| Total gaps on a long answer (time playback was stalled) | 4.22 s, 50+ stalls | **0.17 s** |
+| Time to first audio on a long answer (end of question to first sound) | 4.4 s | **2.3 s** |
+| Total gaps on a long answer (time playback was stalled) | 4.59 s, 48–60 stalls | **0.09 s** |
 | Total VRAM (8 GB card) | about 8.3 GB, doesn't fit (native engine without the patches, estimated) | **about 7.3 GB** |
 
-<sub>RTX 4060 Laptop 8 GB. First audio and gaps: the same long-answer question asked twice per setup and averaged; "Before" is the PyTorch TTS + the LLM on the CPU. VRAM: "After" is a measured 7,448 MiB; "Before" is estimated by adding back the 488 + 594 MiB saved by the patches. GB follows Task Manager's convention (1 GB = 1024 MiB). In a controlled experiment that changed only the scheduling (6 runs per group), 6/6 runs had gaps without turn-taking and 0/6 with it. Full data: [docs/benchmarks.md](docs/benchmarks.md).</sub>
+<sub>RTX 4060 Laptop 8 GB. First audio and gaps: the same long-answer question asked three times per setup and averaged, all setups measured in one sitting; questions sent as text, so first audio excludes VAD and ASR; gaps are estimated by the server against the device's 0.3 s prebuffer; "Before" is the PyTorch TTS + the LLM on the CPU. VRAM: "After" is a measured 7,448 MiB; "Before" is estimated by adding back the 488 + 594 MiB saved by the patches. GB follows Task Manager's convention (1 GB = 1024 MiB). In a controlled experiment that changed only the scheduling (6 runs per group), 6/6 runs had gaps without turn-taking and 0/6 with it. Full data: [docs/benchmarks.md](docs/benchmarks.md).</sub>
 
 ## How it relates to xiaozhi
 
@@ -78,7 +78,7 @@ Details and parameters: [docs/how-it-works.md](docs/how-it-works.md).
 |---|---|
 | GPU | NVIDIA, 8 GB VRAM (tested on RTX 4060 Laptop; the prebuilt engine supports RTX 20 / 30 / 40 / 50 series) |
 | RAM | 16 GB |
-| OS | Windows 10 / 11 x64 (tested on Windows 11; on Linux, only verified to build in CI) |
+| OS | Windows 10 / 11 x64 (tested on Windows 11; on Linux, CI only builds the CPU version of the C bridge and checks its ABI, and the CUDA engine and the full pipeline have never run there) |
 | Disk | about 13 GB (model download about 8.8 GB) |
 | Voice | A clean 3–10 s recording and its exact transcript ([how to prepare one](docs/voice-reference.md)) |
 | Board (optional) | ESP32-S3 flashed with xiaozhi-esp32 firmware (tested on M5Stack Atom EchoS3R, Stack-chan) |
@@ -141,7 +141,7 @@ For mode C, see [server/README.md](server/README.md); to build the engine yourse
 
 ## Known limitations
 
-- Only tested on real hardware with an RTX 4060 Laptop + Windows 11. On Linux it is only verified to build in CI; macOS is untested.
+- Only tested on real hardware with an RTX 4060 Laptop + Windows 11. On Linux, CI only builds the CPU version of the C bridge and checks its ABI; the CUDA engine and the full pipeline have never run there. macOS is untested.
 - `llamacpp_paced` doesn't support tool calling (MCP, device volume, etc.); the standalone server has no speaker recognition, memory or streaming ASR.
 - Loudness between sentences is matched by setting each sentence's gain from its first 0.6 s only; this is not a loudness standard.
 - By default the standalone server is only suitable for a trusted LAN (plaintext, token empty by default). Don't expose it directly to the internet; see [Security](standalone/README.md#安全).
