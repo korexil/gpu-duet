@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 416" width="480" height="416" font-family="-apple-system,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
 <defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#e66767" fill-opacity="0.18"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e66767" stroke-width="2"/></pattern></defs>
 <text x="0.0" y="16.0" font-size="15" fill="#f0f6fc" text-anchor="start" font-weight="600">首声（s）</text>
-<text x="480.0" y="16.0" font-size="12" fill="#9198a1" text-anchor="end" font-weight="400">每阶段两次，各画一条</text>
+<text x="480.0" y="16.0" font-size="12" fill="#9198a1" text-anchor="end" font-weight="400">每阶段两次，各画一条；换引擎一次作废</text>
 <text x="0.0" y="43.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">起点</text>
 <text x="0.0" y="59.0" font-size="11" fill="#9198a1" text-anchor="start" font-weight="400">PyTorch TTS · LLM 在 CPU</text>
 <rect x="150.0" y="30.0" width="216.8" height="12" rx="2.0" fill="#5d5c58"/>
@@ -10,10 +10,8 @@
 <text x="344.8" y="55.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">5.81</text>
 <text x="0.0" y="83.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">换引擎</text>
 <text x="0.0" y="99.0" font-size="11" fill="#9198a1" text-anchor="start" font-weight="400">原生 TTS · LLM 在 CPU</text>
-<rect x="150.0" y="70.0" width="168.4" height="12" rx="2.0" fill="#5d5c58"/>
-<text x="324.4" y="80.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">5.18</text>
-<rect x="150.0" y="85.0" width="180.7" height="12" rx="2.0" fill="#5d5c58"/>
-<text x="336.7" y="95.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">5.56</text>
+<rect x="150.0" y="70.0" width="180.7" height="12" rx="2.0" fill="#5d5c58"/>
+<text x="336.7" y="80.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">5.56</text>
 <text x="0.0" y="123.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">LLM 上 GPU</text>
 <text x="0.0" y="139.0" font-size="11" fill="#9198a1" text-anchor="start" font-weight="400">两者同时用 GPU</text>
 <rect x="150.0" y="110.0" width="136.2" height="12" rx="2.0" fill="#5d5c58"/>
@@ -28,7 +26,7 @@
 <text x="224.9" y="175.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">2.12</text>
 <line x1="150" y1="28" x2="150" y2="182" stroke="#3d444d"/>
 <text x="0.0" y="218.0" font-size="15" fill="#f0f6fc" text-anchor="start" font-weight="600">断音合计（s）</text>
-<text x="480.0" y="218.0" font-size="12" fill="#9198a1" text-anchor="end" font-weight="400">每阶段两次，各画一条</text>
+<text x="480.0" y="218.0" font-size="12" fill="#9198a1" text-anchor="end" font-weight="400">每阶段两次，各画一条；换引擎一次作废</text>
 <text x="0.0" y="245.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">起点</text>
 <text x="0.0" y="261.0" font-size="11" fill="#9198a1" text-anchor="start" font-weight="400">PyTorch TTS · LLM 在 CPU</text>
 <rect x="150.0" y="232.0" width="159.5" height="12" rx="2.0" fill="#5d5c58"/>
@@ -37,11 +35,8 @@
 <text x="361.8" y="257.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">4.75 · 58 次</text>
 <text x="0.0" y="285.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">换引擎</text>
 <text x="0.0" y="301.0" font-size="11" fill="#9198a1" text-anchor="start" font-weight="400">原生 TTS · LLM 在 CPU</text>
-<rect x="150.0" y="272.0" width="260.0" height="12" rx="2.0" fill="#5d5c58"/>
-<line x1="402.0" y1="271" x2="406.0" y2="285" stroke="#f0f6fc" stroke-width="2"/>
-<text x="396.0" y="282.0" font-size="11" fill="#f0f6fc" text-anchor="end" font-weight="600">55.89 · 28 次（超出刻度）</text>
-<rect x="150.0" y="287.0" width="7.8" height="12" rx="2.0" fill="#5d5c58"/>
-<text x="163.8" y="297.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">0.18 · 3 次</text>
+<rect x="150.0" y="272.0" width="7.8" height="12" rx="2.0" fill="#5d5c58"/>
+<text x="163.8" y="282.0" font-size="11" fill="#f0f6fc" text-anchor="start" font-weight="600">0.18 · 3 次</text>
 <text x="0.0" y="325.0" font-size="13" fill="#f0f6fc" text-anchor="start" font-weight="600">LLM 上 GPU</text>
 <text x="0.0" y="341.0" font-size="11" fill="#9198a1" text-anchor="start" font-weight="400">两者同时用 GPU</text>
 <rect x="150.0" y="312.0" width="90.1" height="12" rx="2.0" fill="#5d5c58"/>
