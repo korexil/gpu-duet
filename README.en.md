@@ -34,11 +34,11 @@
 
 | | Before | After |
 |---|---|---|
-| Time to first audio on a long answer (end of question to first sound) | 4.4 s | **2.3 s** |
+| Time to first audio on a long answer (from the question to the server sending its first audio frame; the board plays it later, by an amount not measured) | 4.4 s | **2.3 s** |
 | Total gaps on a long answer (time playback was stalled) | 4.59 s, 48–60 stalls | **0.09 s** |
 | Total VRAM (8 GB card) | about 8.3 GB, doesn't fit (native engine without the patches, estimated) | **about 7.3 GB** |
 
-<sub>RTX 4060 Laptop 8 GB. First audio and gaps: the same long-answer question asked three times per setup and averaged, all setups measured in one sitting; questions sent as text, so first audio excludes VAD and ASR; gaps are estimated by the server against the device's 0.3 s prebuffer; "Before" is the PyTorch TTS + the LLM on the CPU. VRAM: "After" is a measured 7,448 MiB; "Before" is estimated by adding back the 488 + 594 MiB saved by the patches. GB follows Task Manager's convention (1 GB = 1024 MiB). In a controlled experiment that changed only the scheduling (6 runs per group), 6/6 runs had gaps without turn-taking and 0/6 with it. Full data: [docs/benchmarks.md](docs/benchmarks.md).</sub>
+<sub>RTX 4060 Laptop 8 GB. First audio and gaps: the same long-answer question asked three times per setup and averaged, all setups measured in one sitting; questions sent as text, so first audio excludes VAD and ASR; gaps are estimated by the server against the device's 0.3 s prebuffer; "Before" is the PyTorch TTS + the LLM on the CPU. VRAM: "After" is a measured 7,448 MiB; "Before" is estimated by adding back the 488 + 594 MiB saved by the patches. GB follows Task Manager's convention (1 GB = 1024 MiB). In a controlled experiment that changed only the scheduling (6 runs per group, with a simulated 0.5 s-buffer player), 6/6 runs had gaps without turn-taking and 0/6 with it. Full data: [docs/benchmarks.md](docs/benchmarks.md).</sub>
 
 ## How it relates to xiaozhi
 
