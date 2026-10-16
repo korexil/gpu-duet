@@ -1,3 +1,5 @@
+中文 · [English](pitfalls.en.md)
+
 # 踩坑记录
 
 环境：RTX 4060 Laptop 8 GB、16 GB 内存、Windows 11；终端 M5Stack Atom EchoS3R（ESP32-S3）；服务端 xiaozhi-esp32-server（Docker）。对话语言是日语，结论大多与语言无关。
