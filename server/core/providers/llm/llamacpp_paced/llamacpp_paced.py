@@ -1,10 +1,10 @@
 """llama.cpp server provider that takes turns with a local TTS on the same GPU.
 
-A streaming TTS decodes frame by frame with many small synchronous kernels. Any
-concurrent LLM decoding on the same GPU stretches every step: on an 8 GB laptop
-GPU the first sentence ran at RTF 1.1-1.6 while the LLM was still generating,
-leaving audible gaps. Rate-limiting the LLM did not help (RTF stayed ~1.4), but
-together the two only need ~75% of the GPU, so this provider serializes them:
+Concurrent LLM decoding on the same GPU slows a streaming TTS down: on an 8 GB
+laptop GPU the first sentence ran at RTF 1.1-1.6 while the LLM was still
+generating, leaving gaps. (Probably because the TTS decodes frame by frame with
+many small synchronous kernels; not confirmed with a profiler.) Rate-limiting
+the LLM did not help (RTF stayed ~1.4), so this provider serializes them:
 it generates up to a sentence end, waits while the TTS reports ``busy``, and
 continues in the TTS's idle gaps. Measured in bench/ (6 runs per cell, median,
 ~80 s answers): first audio 3.20 s -> 1.83 s, playback underrun 2.27 s -> 0.

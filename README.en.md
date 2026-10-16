@@ -6,7 +6,7 @@
 
 *A local LLM and a zero-shot voice-cloning TTS take turns on one 8 GB GPU. Use them as local HTTP services, or as an offline voice server for ESP32 boards running xiaozhi firmware.*
 
-[Results](#results) · [How it works](#how-it-works) · [Requirements](#requirements) · [Quick start](#quick-start) · [Connect a board](#connect-a-board-mode-b) · [Known limitations](#known-limitations) · [Upstream fixes](#fixes-sent-upstream) · [Docs](#documentation) · [32 pitfalls](docs/pitfalls.md)
+[Results](#results) · [How it works](#how-it-works) · [Requirements](#requirements) · [Quick start](#quick-start) · [Connect a board](#connect-a-board-mode-b) · [Known limitations](#known-limitations) · [FAQ](#faq) · [Upstream fixes](#fixes-sent-upstream) · [Docs](#documentation) · [32 pitfalls](docs/pitfalls.md)
 
 [![CI](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/korexil/gpu-duet)](https://github.com/korexil/gpu-duet/releases/latest)
@@ -147,6 +147,46 @@ For mode C, see [server/README.md](server/README.md); to build the engine yourse
 - By default the standalone server is only suitable for a trusted LAN (plaintext, token empty by default). Don't expose it directly to the internet; see [Security](standalone/README.md#安全).
 
 Full list: [docs/architecture.md](docs/architecture.md#限制).
+
+## FAQ
+
+All numbers below were measured on an RTX 4060 Laptop (8 GB) with Windows 11.
+
+### My local voice assistant stutters and long answers keep breaking up
+
+When the LLM and the TTS share one GPU at the same time, the TTS slows down and synthesis falls behind playback. This repo makes them take turns on the GPU. On the same server pipeline, total gaps drop from 2.84 s to 0.09 s compared with running both at once (3-run averages, [four-stage measurements](docs/benchmarks.md)); in a controlled test that changes only the scheduling, 6 of 6 runs stalled at once and 0 of 6 when taking turns (simulated player, [pitfall #9](docs/pitfalls.md)). Throttling the LLM and changing the Windows GPU scheduling priority were tried and didn't help.
+
+### It takes seconds after the question before it starts speaking
+
+"Starts speaking" here is the server sending its first audio frame to the board; the board's own buffering and decoding come after that and aren't measured.
+
+- Where the LLM runs and how it is scheduled (native TTS engine in all three): 5.3 s with the LLM on the CPU, 3.9 s with it on the GPU, 2.3 s when taking turns (3-run averages, [four-stage measurements](docs/benchmarks.md)).
+- The GPU clocks down when idle: after 8 s idle, the TTS needs 0.64 s for its first block, against 0.17 s when warm (pitfall #11).
+- The standalone server holds back 1.2 s of audio to trim each segment's trailing silence. When the first batch of audio is shorter than that, the first frame waits for the next block: 0.19 to 0.20 s longer when taking turns, 0.46 to 0.48 s when running at once ([PCM traces](bench/results/traces-2026-10-16/)).
+
+### VRAM just fits, but everything gets slower with no error
+
+What we ran into: with two TTS instances on the GPU, the Windows driver didn't report an error; it moved most of llama-server's VRAM to shared system memory, and decoding dropped from 66 to 45 tok/s. Check each process's "Dedicated GPU memory" in Task Manager and restart the affected process if it happens; normally start the TTS before the LLM (pitfall #12, [how it works](docs/how-it-works.md)).
+
+### The LLM and the TTS don't fit on an 8 GB GPU
+
+Without the patches it would take about 8.3 GB (estimated), more than the card has. Two patches to the TTS engine save about 1 GB: deduplicating the Q/K/V weights saves 488 MiB and keeping the text embedding table on the CPU saves 594 MiB. With them, the two models take about 6.8 GB and the whole card shows 7.3 GB in use, including the desktop. See [docs/how-it-works.md](docs/how-it-works.md).
+
+### Loudness jumps between sentences, pauses vary, a small speaker clips
+
+Each synthesized sentence is shaped the same way: one gain set from its first 0.6 s, leading silence trimmed, the trailing pause padded to a fixed length (0.9 s by default), and a smooth limiter keeping peaks at -6 dBFS (pitfalls #14 to #16).
+
+### There is a "pop" every time before it speaks
+
+The board we tested turns its amplifier off when idle and back on when it starts playing; other boards may not. After more than 1.5 s of silence, the first sentence starts with 0.3 s of silence (pitfall #17).
+
+### The model won't open from a folder with non-ASCII characters
+
+Upstream qwen3-tts.cpp opens the model and reference audio with ANSI `fopen`, so non-ASCII paths point at the wrong file. The engine patch here converts to wide characters first (`src/common/utf8_path.h`). Tested with Japanese folder names; Chinese ones weren't tested separately (pitfall #32).
+
+### `WinError 206` when installing dependencies, or `Could not open output file ...cu.obj.d` when building
+
+Both hit the 260-character path limit on Windows. For the dependencies, put the venv on a short path or enable long path support in Windows (pitfall #29); for the build, use a short build directory (pitfall #24).
 
 ## Fixes sent upstream
 
