@@ -27,7 +27,7 @@ Windows 下 Opus 编解码用的是 `pyogg` 轮子里自带的 `opus.dll`；Linu
 
 ## 让板子连过来
 
-xiaozhi 固件启动时先访问 OTA 地址拿 WebSocket 地址，所以只要把 OTA 指向这台电脑：
+xiaozhi 固件启动时先访问 OTA 地址拿 WebSocket 地址，所以只要把 OTA 指向你自己运行 standalone 服务端的那台电脑（填启动日志里打出的完整 OTA 地址，是局域网地址）：
 
 - **刷固件时**：`idf.py menuconfig` → Xiaozhi Assistant → OTA URL 填上面那个地址。
 - **已经刷好的板子**：在配网页面（设备进入配网模式后连它的热点）里改 OTA 地址；或者原来接的是 xiaozhi-esp32-server，在它的管理后台把 `server.websocket` 参数改成 `ws://<本机IP>:8000/xiaozhi/v1/`，板子下次连接就会过来。
