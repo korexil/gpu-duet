@@ -319,9 +319,11 @@ class Session:
             while True:
                 kind, payload = await queue.get()
                 if kind == 'sentence':
+                    self.ctx.bus.publish({'type': 'tts_start'})      # trace: TTS request for this sentence
                     spoken.append(payload)
                     pending_text = payload          # shown when its audio starts, not when the text is ready
                 elif kind == 'pcm':
+                    self.ctx.bus.publish({'type': 'pcm', 'ms': round(len(payload) / 2 / self.out_rate * 1000, 1)})
                     if first_audio is None:
                         first_audio = time.monotonic() - t0
                     if pending_text is not None:
@@ -333,6 +335,7 @@ class Session:
                         tail = await self._send_pcm(tail + held[:-self.hold_bytes], pacer)
                         held = held[-self.hold_bytes:]
                 elif kind == 'chunk_end':
+                    self.ctx.bus.publish({'type': 'chunk_end'})
                     if pending_text is not None:    # a chunk that produced no audio still shows its text
                         await self.send_tts('sentence_start', pending_text)
                         pending_text = None
@@ -377,6 +380,8 @@ class Session:
     async def _send_pcm(self, data, pacer):
         """Cut PCM into frames, encode and send on the pacer's schedule; return the leftover bytes."""
         size = self.out_frame * 2
+        if len(data) >= size:   # trace: frames handed to the pacer (after the tail hold), before pacing
+            self.ctx.bus.publish({'type': 'release', 'frames': len(data) // size})
         while len(data) >= size:
             frame, data = data[:size], data[size:]
             if self.agc is not None:
