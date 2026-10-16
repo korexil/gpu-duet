@@ -34,7 +34,7 @@ LLM 侧：Gemma 4 E4B 全层上 GPU，逐层 embedding 表留在内存按需读�
   <img alt="示意图，标注值来自 benchmark 中位数：同时跑时 TTS 实时率 1.1～1.6，首声 3.20 s、断音合计 2.27 s；轮流跑时实时率约 0.6，首声 1.83 s、断音 0" src="img/timeline-light.svg" width="480">
 </picture>
 
-TTS 逐帧解码，是大量很小的同步 kernel；LLM 同时解码时，TTS 第一句实时率升到 1.1～1.6，比播放慢。给 LLM 限速（20、14 tok/s）和调 WDDM 调度优先级都无效（[踩坑 #9](pitfalls.md)）。两者合计只需约 75% 的 GPU，所以串行：LLM 写到句末就停，等 TTS 合成完再续写。
+LLM 同时解码时，TTS 第一句实时率升到 1.1～1.6，比播放慢（推测是因为 TTS 逐帧解码、由大量很小的同步 kernel 组成，没有用 profiler 验证）。给 LLM 限速（20、14 tok/s）和调 WDDM 调度优先级都无效（[踩坑 #9](pitfalls.md)），所以串行：LLM 写到句末就停，等 TTS 合成完再续写。
 
 一轮回答里 `llamacpp_paced` 和两个服务的交互顺序：
 

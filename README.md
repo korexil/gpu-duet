@@ -6,7 +6,7 @@
 
 *A local LLM and a zero-shot voice-cloning TTS take turns on one 8 GB GPU. Use them as local HTTP services, or as an offline voice server for ESP32 boards running xiaozhi firmware.*
 
-[效果](#效果) · [原理](#原理) · [需要什么](#需要什么) · [快速开始](#快速开始) · [接板子](#接板子用法-b) · [已知限制](#已知限制) · [上游修复](#提给上游的修复) · [文档](#文档) · [32 条踩坑](docs/pitfalls.md)
+[效果](#效果) · [原理](#原理) · [需要什么](#需要什么) · [快速开始](#快速开始) · [接板子](#接板子用法-b) · [已知限制](#已知限制) · [常见问题](#常见问题) · [上游修复](#提给上游的修复) · [文档](#文档) · [32 条踩坑](docs/pitfalls.md)
 
 [![CI](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/korexil/gpu-duet)](https://github.com/korexil/gpu-duet/releases/latest)
@@ -146,6 +146,46 @@ python standalone\server.py
 - 独立服务端默认只适合受信任的局域网（明文、token 默认为空），不要直接暴露到公网，见[安全](standalone/README.md#安全)。
 
 完整列表：[docs/architecture.md](docs/architecture.md#限制)。
+
+## 常见问题
+
+以下数字都是在 RTX 4060 Laptop（8 GB）+ Windows 11 上测的。
+
+### 本地语音助手说话一顿一顿，长回答断断续续
+
+LLM 和 TTS 同时用一块显卡时，TTS 被拖慢，合成赶不上播放。本仓库让两者轮流用 GPU。同一条服务端管线上，和同时跑相比，断音合计从 2.84 s 降到 0.09 s（各三次平均，[四阶段实测](docs/benchmarks.md)）；只改调度的对照实验里，同时跑 6/6 次断音，轮流 0/6（模拟播放器，[踩坑 #9](docs/pitfalls.md)）。给 LLM 限速、调 Windows 的 GPU 调度优先级都试过，没有用。
+
+### 问完之后要等好几秒才开口
+
+这里的「开口」是服务端向板子发出第一帧音频的时刻；板子自己的缓冲和解码还在后面，没有测。
+
+- LLM 的位置和调度（TTS 都用原生引擎）：LLM 在 CPU 上时是 5.3 s，换到 GPU 是 3.9 s，再改成轮流是 2.3 s（各三次平均，[四阶段实测](docs/benchmarks.md)）。
+- GPU 空闲后会降频：空闲 8 s 后，TTS 第一块音频要 0.64 s，热态 0.17 s（踩坑 #11）。
+- 独立服务端为了修剪段尾静音，会先扣住 1.2 s 音频。第一批音频不到 1.2 s 时，要等下一块到了才发第一帧：轮流时多等 0.19～0.20 s，同时跑时 0.46～0.48 s（[PCM 跟踪](bench/results/traces-2026-10-16/)）。
+
+### 显存刚好够，却越跑越慢，也不报错
+
+我们遇到过：两个 TTS 实例同时占着显卡时，Windows 驱动没有报错，而是把 llama-server 的大部分显存挪到共享内存，解码从 66 降到 45 tok/s。在任务管理器里看每个进程的「专用 GPU 内存」，出现时重启受影响的进程；平时先启动 TTS 再启动 LLM（踩坑 #12，[原理](docs/how-it-works.md)）。
+
+### 8 GB 显卡装不下 LLM 和 TTS
+
+不打补丁，推算要 8.3 GB 左右，超出 8 GB。TTS 引擎的两个补丁省约 1 GB：Q/K/V 权重去重省 488 MiB，文本嵌入表放 CPU 省 594 MiB。打补丁后两个模型合计约 6.8 GB，整卡占用 7.3 GB（含桌面）。见 [docs/how-it-works.md](docs/how-it-works.md)。
+
+### 一段回答里忽大忽小、停顿忽长忽短、小喇叭爆音
+
+逐句合成后统一整形：每句按开头 0.6 s 定一个增益，切掉开头静音，句尾停顿补到固定长度（默认 0.9 s），用平滑限幅把峰值留在 -6 dBFS（踩坑 #14～#16）。
+
+### 每次开口前「啪」一声
+
+我们测的板子空闲时会关功放，开口时才上电，其他板子不一定这样。静默 1.5 s 以上之后的第一句，前面留 0.3 s 静音（踩坑 #17）。
+
+### 中文或日文目录下打不开模型
+
+上游 qwen3-tts.cpp 用 ANSI `fopen` 打开模型和参考音，非 ASCII 路径会找错文件。本仓库的引擎补丁改成先转宽字符再打开（`src/common/utf8_path.h`）。已用日文目录实测，中文目录没有单独测（踩坑 #32）。
+
+### 装依赖报 `WinError 206`，或编译报 `Could not open output file ...cu.obj.d`
+
+都是撞上了 Windows 260 字符的路径长度限制。装依赖时，把 venv 放在短路径下，或在系统里开启长路径支持（踩坑 #29）；编译时，把编译目录放在短路径下（踩坑 #24）。
 
 ## 提给上游的修复
 

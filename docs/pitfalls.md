@@ -35,9 +35,9 @@
 ## 三、一块 8 GB GPU 上同时跑 LLM 和 TTS
 
 **9. 同时跑，TTS 跟不上实时。** TTS 单独 RTF 约 0.6；LLM 同时解码时，第一句 RTF 升到 1.1～1.6，开头就断。
-- 给 LLM 限速（20 或 14 tok/s）：无效，RTF 仍约 1.4。TTS 逐帧解码，大量很小的同步 kernel，LLM 只占一点时间片，TTS 每一步都要等。
+- 给 LLM 限速（20 或 14 tok/s）：无效，RTF 仍约 1.4。推测原因：TTS 逐帧解码，是大量很小的同步 kernel，LLM 只占一点时间片，TTS 每一步也要等（没有用 profiler 验证）。
 - 调 WDDM GPU 调度优先级（`D3DKMTSetProcessSchedulingPriorityClass`）：对 CUDA 计算无效。
-- **轮流用 GPU**：LLM 生成到句末就停，等 TTS `/health` 不再 `busy` 再继续。两者合计只需约 75% 的 GPU，串行够用。[benchmark](../bench/README.md)（每格 6 次，中位数）：
+- **轮流用 GPU**：LLM 生成到句末就停，等 TTS `/health` 不再 `busy` 再继续。[benchmark](../bench/README.md)（每格 6 次，中位数）：
 
   | | 首声 | 断音合计 | 有断音 |
   |---|---|---|---|
