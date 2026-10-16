@@ -6,14 +6,14 @@
 
 *A local LLM and a zero-shot voice-cloning TTS take turns on one 8 GB GPU. Use them as local HTTP services, or as an offline voice server for ESP32 boards running xiaozhi firmware.*
 
-[Results](#results) · [How it works](#how-it-works) · [Requirements](#requirements) · [Quick start](#quick-start) · [Connect a board](#connect-a-board-mode-b) · [Known limitations](#known-limitations) · [FAQ](#faq) · [Upstream fixes](#fixes-sent-upstream) · [Docs](#documentation) · [32 pitfalls](docs/pitfalls.md)
+[Results](#results) · [How it works](#how-it-works) · [Requirements](#requirements) · [Quick start](#quick-start) · [Connect a board](#connect-a-board-mode-b) · [Known limitations](#known-limitations) · [FAQ](#faq) · [Upstream fixes](#fixes-sent-upstream) · [Docs](#documentation) · [32 pitfalls](docs/pitfalls.en.md)
 
 [![CI](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/korexil/gpu-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/korexil/gpu-duet)](https://github.com/korexil/gpu-duet/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Bilibili](https://img.shields.io/badge/Demo_video-Bilibili-00A1D6)](https://www.bilibili.com/video/BV15Cpr6eEMx)
 
-| First word | Total gaps | VRAM |
+| First audio | Total gaps | VRAM |
 |:-:|:-:|:-:|
 | 4.4&nbsp;→&nbsp;**2.3&nbsp;s** | 4.59&nbsp;→&nbsp;**0.09&nbsp;s** | **7.3&nbsp;GB**&nbsp;/&nbsp;8&nbsp;GB |
 
@@ -38,7 +38,7 @@
 | Total gaps on a long answer (time playback was stalled) | 4.59 s, 48–60 stalls | **0.09 s** |
 | Total VRAM (8 GB card) | about 8.3 GB, doesn't fit (native engine without the patches, estimated) | **about 7.3 GB** |
 
-<sub>RTX 4060 Laptop 8 GB. First audio and gaps: the same long-answer question asked three times per setup and averaged, all setups measured in one sitting; questions sent as text, so first audio excludes VAD and ASR; gaps are estimated by the server against the device's 0.3 s prebuffer; "Before" is the PyTorch TTS + the LLM on the CPU. VRAM: "After" is a measured 7,448 MiB; "Before" is estimated by adding back the 488 + 594 MiB saved by the patches. GB follows Task Manager's convention (1 GB = 1024 MiB). In a controlled experiment that changed only the scheduling (6 runs per group, with a simulated 0.5 s-buffer player), 6/6 runs had gaps without turn-taking and 0/6 with it. Full data: [docs/benchmarks.md](docs/benchmarks.md).</sub>
+<sub>RTX 4060 Laptop 8 GB. First audio and gaps: the same long-answer question asked three times per setup and averaged, all setups measured in one sitting; questions sent as text, so first audio excludes VAD and ASR; gaps are estimated by the server against the device's 0.3 s prebuffer; "Before" is the PyTorch TTS + the LLM on the CPU. VRAM: "After" is a measured 7,448 MiB; "Before" is estimated by adding back the 488 + 594 MiB saved by the patches. GB follows Task Manager's convention (1 GB = 1024 MiB). In a controlled experiment that changed only the scheduling (6 runs per group, with a simulated 0.5 s-buffer player), 6/6 runs had gaps without turn-taking and 0/6 with it. Full data: [docs/benchmarks.en.md](docs/benchmarks.en.md).</sub>
 
 ## How it relates to xiaozhi
 
@@ -70,7 +70,7 @@ Microphone → VAD · ASR (CPU) → LLM (GPU) ⇄ take turns ⇄ TTS (GPU) → s
   <img alt="Diagram: running at the same time slows the TTS down, with first audio at 3.20 s and 2.27 s of total gaps; taking turns gives first audio at 1.83 s and 0 s of gaps (benchmark medians)" src="docs/img/timeline-light.svg" width="480">
 </picture>
 
-Details and parameters: [docs/how-it-works.md](docs/how-it-works.md).
+Details and parameters: [docs/how-it-works.en.md](docs/how-it-works.en.md).
 
 ## Requirements
 
@@ -154,23 +154,23 @@ All numbers below were measured on an RTX 4060 Laptop (8 GB) with Windows 11.
 
 ### My local voice assistant stutters and long answers keep breaking up
 
-When the LLM and the TTS share one GPU at the same time, the TTS slows down and synthesis falls behind playback. This repo makes them take turns on the GPU. On the same server pipeline, total gaps drop from 2.84 s to 0.09 s compared with running both at once (3-run averages, [four-stage measurements](docs/benchmarks.md)); in a controlled test that changes only the scheduling, 6 of 6 runs stalled at once and 0 of 6 when taking turns (simulated player, [pitfall #9](docs/pitfalls.md)). Throttling the LLM and changing the Windows GPU scheduling priority were tried and didn't help.
+When the LLM and the TTS share one GPU at the same time, the TTS slows down and synthesis falls behind playback. This repo makes them take turns on the GPU. On the same server pipeline, total gaps drop from 2.84 s to 0.09 s compared with running both at once (3-run averages, [four-stage measurements](docs/benchmarks.en.md)); in a controlled test that changes only the scheduling, 6 of 6 runs stalled at once and 0 of 6 when taking turns (simulated player, [pitfall #9](docs/pitfalls.en.md)). Throttling the LLM and changing the Windows GPU scheduling priority were tried and didn't help.
 
 ### It takes seconds after the question before it starts speaking
 
 "Starts speaking" here is the server sending its first audio frame to the board; the board's own buffering and decoding come after that and aren't measured.
 
-- Where the LLM runs and how it is scheduled (native TTS engine in all three): 5.3 s with the LLM on the CPU, 3.9 s with it on the GPU, 2.3 s when taking turns (3-run averages, [four-stage measurements](docs/benchmarks.md)).
+- Where the LLM runs and how it is scheduled (native TTS engine in all three): 5.3 s with the LLM on the CPU, 3.9 s with it on the GPU, 2.3 s when taking turns (3-run averages, [four-stage measurements](docs/benchmarks.en.md)).
 - The GPU clocks down when idle: after 8 s idle, the TTS needs 0.64 s for its first block, against 0.17 s when warm (pitfall #11).
 - The standalone server holds back 1.2 s of audio to trim each segment's trailing silence. When the first batch of audio is shorter than that, the first frame waits for the next block: 0.19 to 0.20 s longer when taking turns, 0.46 to 0.48 s when running at once ([PCM traces](bench/results/traces-2026-10-16/)).
 
 ### VRAM just fits, but everything gets slower with no error
 
-What we ran into: with two TTS instances on the GPU, the Windows driver didn't report an error; it moved most of llama-server's VRAM to shared system memory, and decoding dropped from 66 to 45 tok/s. Check each process's "Dedicated GPU memory" in Task Manager and restart the affected process if it happens; normally start the TTS before the LLM (pitfall #12, [how it works](docs/how-it-works.md)).
+What we ran into: with two TTS instances on the GPU, the Windows driver didn't report an error; it moved most of llama-server's VRAM to shared system memory, and decoding dropped from 66 to 45 tok/s. Check each process's "Dedicated GPU memory" in Task Manager and restart the affected process if it happens; normally start the TTS before the LLM (pitfall #12, [how it works](docs/how-it-works.en.md)).
 
 ### The LLM and the TTS don't fit on an 8 GB GPU
 
-Without the patches it would take about 8.3 GB (estimated), more than the card has. Two patches to the TTS engine save about 1 GB: deduplicating the Q/K/V weights saves 488 MiB and keeping the text embedding table on the CPU saves 594 MiB. With them, the two models take about 6.8 GB and the whole card shows 7.3 GB in use, including the desktop. See [docs/how-it-works.md](docs/how-it-works.md).
+Without the patches it would take about 8.3 GB (estimated), more than the card has. Two patches to the TTS engine save about 1 GB: deduplicating the Q/K/V weights saves 488 MiB and keeping the text embedding table on the CPU saves 594 MiB. With them, the two models take about 6.8 GB and the whole card shows 7.3 GB in use, including the desktop. See [docs/how-it-works.en.md](docs/how-it-works.en.md).
 
 ### Loudness jumps between sentences, pauses vary, a small speaker clips
 
@@ -208,15 +208,15 @@ The documents below are in Chinese.
 
 | Document | Contents |
 |---|---|
-| [docs/how-it-works.md](docs/how-it-works.md) | How it works: VRAM-saving patches, GPU turn-taking timing and parameters, per-sentence shaping |
-| [docs/benchmarks.md](docs/benchmarks.md) | Measured data and methodology |
+| [docs/how-it-works.en.md](docs/how-it-works.en.md) | How it works: VRAM-saving patches, GPU turn-taking timing and parameters, per-sentence shaping |
+| [docs/benchmarks.en.md](docs/benchmarks.en.md) | Measured data and methodology |
 | [docs/architecture.md](docs/architecture.md) | The three modes, component dependencies, ports and resources, runtime environment, limitations |
 | [tts-service/README.md](tts-service/README.md) | TTS service launch options and HTTP API |
 | [native-tts/README.md](native-tts/README.md) | Engine patch switches, prebuilt packages, building it yourself, models |
 | [standalone/README.md](standalone/README.md) | Standalone server: connecting boards, configuration, live dashboard |
 | [server/README.md](server/README.md) | Integrating with xiaozhi-esp32-server |
 | [docs/voice-reference.md](docs/voice-reference.md) | How to prepare the reference audio |
-| [docs/pitfalls.md](docs/pitfalls.md) | 32 pitfalls we ran into |
+| [docs/pitfalls.en.md](docs/pitfalls.en.md) | 32 pitfalls we ran into |
 | [docs/standalone-tuning.md](docs/standalone-tuning.md) | Standalone server tuning notes |
 | [docs/upstream.md](docs/upstream.md) | Upstream PRs and experimental branches |
 | [docs/development.md](docs/development.md) | Directory layout, tests (no GPU or models needed), CI |
