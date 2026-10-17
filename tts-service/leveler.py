@@ -47,22 +47,26 @@ class Leveler:
         self.limit = 10 ** (max_boost_db / 20)
         self.last_end = 0.0
 
-    def begin(self, text):
-        return Sentence(self, text)
+    def begin(self, text, pause=None):
+        return Sentence(self, text, pause)
 
-    def pause_for(self, text):
+    def pause_for(self, text, pause=None):
         """Short interjections get the clause pause; the server strips the punctuation
         that would tell a clause from a sentence, so length is the only cue. Tune
-        ``clause_chars`` per language (6 suits Japanese and Chinese)."""
-        return self.clause_pause if len(text.strip()) <= self.clause_chars else self.sentence_pause
+        ``clause_chars`` per language (6 suits Japanese and Chinese). A caller that
+        knows how it joins sentences passes its own ``pause`` instead."""
+        sentence = self.sentence_pause if pause is None else pause
+        clause = min(self.clause_pause, sentence)
+        return clause if len(text.strip()) <= self.clause_chars else sentence
 
 
 class Sentence:
     """State of one sentence passing through the leveler."""
 
-    def __init__(self, leveler, text):
+    def __init__(self, leveler, text, pause=None):
         self.leveler = leveler
         self.text = text
+        self.pause = pause
         self.gain = 1.0
         self.env = 1.0
         self.block_gain = 1.0
@@ -140,7 +144,7 @@ class Sentence:
 
     def finish(self):
         self.leveler.last_end = time.monotonic()
-        pause = np.zeros(int(self.leveler.pause_for(self.text) * SAMPLE_RATE), np.float32)
+        pause = np.zeros(int(self.leveler.pause_for(self.text, self.pause) * SAMPLE_RATE), np.float32)
         if not self.started:
             if not self.held:
                 return np.zeros(0, np.float32)

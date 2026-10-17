@@ -1,0 +1,4 @@
+old.wav: 11.64 s, lead-in 0.37 s, pauses >= 0.25 s: [0.28, 0.25, 0.46, 0.57, 0.58, 0.31], trailing 0.42 s, peak 10436
+new.wav: 11.58 s, lead-in 0.37 s, pauses >= 0.25 s: [0.28, 0.25, 0.45, 0.39, 0.54], trailing 0.42 s, peak 11516
+old-2.wav: 11.64 s, lead-in 0.37 s, pauses >= 0.25 s: [0.28, 0.25, 0.46, 0.57, 0.58, 0.31], trailing 0.42 s, peak 10436
+new-2.wav: 11.64 s, lead-in 0.37 s, pauses >= 0.25 s: [0.28, 0.25, 0.45, 0.57, 0.58, 0.31], trailing 0.43 s, peak 10874

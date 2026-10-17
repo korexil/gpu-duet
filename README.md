@@ -40,6 +40,8 @@
 
 <sub>RTX 4060 Laptop 8 GB。首声、断音：同一个长回答问题各问三次取平均（四个阶段在同一时段测完），文字提问（首声不含 VAD 和 ASR），断音由服务端按设备 0.3 s 预缓冲估算，「之前」是 PyTorch 版 TTS + CPU 上的 LLM。显存：「之后」是实测 7,448 MiB，「之前」是再加上补丁省下的 488 + 594 MiB 推算出来的；GB 按任务管理器的口径（1 GB = 1024 MiB）。只改调度的对照实验（每组 6 次，模拟 0.5 s 缓冲的播放器）里，轮流前 6/6 次有断音，轮流后 0/6。全部数据：[docs/benchmarks.md](docs/benchmarks.md)。</sub>
 
+v0.1.3（2026-10-18）去掉了服务端的尾部扣留：轮流时第一帧随第一块音频一起发出（三次 1.77～1.96 s，之前要再等 0.19 s），开头偶发的 0.13 s 断音消失（三次全 0）；同一问题经新旧服务端各放一遍，段间停顿和首尾静音的统计相同，盲听也听不出区别（1 个问题、1 对有效对比、1 人）。见 [docs/benchmarks.md](docs/benchmarks.md#v013去掉尾部扣留之后2026-10-18)。
+
 ## 和小智（xiaozhi）的关系
 
 小智是一个开源的 ESP32 语音助手，分两部分：板子上的 [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) 固件，和电脑上的 [xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server) 服务端。

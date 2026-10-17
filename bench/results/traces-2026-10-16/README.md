@@ -31,12 +31,15 @@ on an RTX 4060 Laptop (8 GB), Windows 11: `gpu-*` = LLM and TTS both on the GPU,
   arrival, none of the three has a gap and the first frame is 0.19 s earlier. Only the first segment
   is replayed: after it, trimming the trailing silence changes the audio, which the replay can't
   model. With the hold removed the concurrent runs still have gaps.
-- **Running at once, the TTS falls behind while the LLM is generating.** The first sentence's
-  wall-clock RTF (TTS request to its last PCM) is 1.49–1.51, against 0.96–0.98 when taking turns. All
-  gaps fall in the first 13 s, while the LLM is generating or just after it finishes (10.5–12.3 s);
-  none come later in the 64–73 s answers, and the per-sentence median RTF over the whole answer is
-  the same as when taking turns (0.84–0.89). The start delay needed for zero gaps is set by the
-  latest frame in that window.
+- **Running at once, the TTS falls behind while the LLM is generating.** All gaps fall in the first
+  13 s, while the LLM is generating or just after it finishes (10.5–12.3 s); none come later in the
+  64–73 s answers. The start delay needed for zero gaps is set by the latest frame in that window.
+  *Correction (2026-10-18):* the per-sentence RTF figures first given here (first sentence 1.49–1.51
+  against 0.96–0.98 when taking turns; median 0.84–0.89 either way) were computed from `pcm` events
+  that the server published when its event loop took each block off the queue, and after the first
+  frame that loop runs at playback pace, so blocks that arrived early were stamped late. Measured at
+  arrival ([traces-2026-10-18](../traces-2026-10-18/)): first sentence 1.33–1.47 running at once
+  against 0.61–0.62 when taking turns; later sentences about 0.6 either way.
 - **Checking the replay.** Replaying the Pacer on the recorded release times with its real 5-frame
   prebuffer gives the same number of gaps as the server reported in every run, totals within 0.011 s,
   timestamps within a few milliseconds (one gap of 0.090 s is replayed as 0.101 s). With 7 or 9

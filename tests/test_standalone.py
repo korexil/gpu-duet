@@ -43,14 +43,17 @@ class FakeBrain:
     base_url = 'http://llm'
 
     def __init__(self, text='第一句。第二句！', delay=0.0):
-        self.text, self.delay, self.dialogues = text, delay, []
+        self.text, self.delay, self.dialogues, self.closed = text, delay, [], 0
 
     def reply(self, dialogue):
         self.dialogues.append(dialogue)
-        for ch in self.text:
-            if self.delay:
-                time.sleep(self.delay)
-            yield ch
+        try:
+            for ch in self.text:
+                if self.delay:
+                    time.sleep(self.delay)
+                yield ch
+        finally:
+            self.closed += 1
 
     def health(self):
         return True
@@ -60,10 +63,11 @@ class FakeTts:
     base_url = 'http://tts'
 
     def __init__(self, seconds=0.3):
-        self.seconds, self.sentences = seconds, []
+        self.seconds, self.sentences, self.pauses = seconds, [], []
 
-    def stream(self, text):
+    def stream(self, text, pause=None):
         self.sentences.append(text)
+        self.pauses.append(pause)
         yield np.full(int(self.seconds * 24000), 1000, dtype=np.int16).tobytes()
 
     def health(self):
@@ -327,17 +331,17 @@ def test_agc_evens_out_a_loud_opening_and_a_quiet_tail():
 class TrailingSilenceTts(FakeTts):
     """0.3 s of tone followed by 0.5 s of silence per chunk, like tts-service's sentence pause."""
 
-    def stream(self, text):
+    def stream(self, text, pause=None):
         self.sentences.append(text)
+        self.pauses.append(pause)
         tone = np.full(int(0.3 * 24000), 1000, dtype=np.int16).tobytes()
         yield tone[:len(tone) // 2]
         yield tone[len(tone) // 2:] + bytes(2 * 12000)
 
 
-def test_chunk_tail_silence_is_trimmed_to_the_configured_pause(stack):
+def test_the_pause_is_requested_from_the_tts_and_nothing_is_held_back(stack):
     stack['tts'] = TrailingSilenceTts()
-    ctx = standalone.Context(make_cfg(chunk_pause_ms=120, tail_hold_ms=600), codec_factory=RawCodec,
-                             vad_factory=AmplitudeVad, **stack)
+    ctx = standalone.Context(make_cfg(chunk_pause_ms=120), codec_factory=RawCodec, vad_factory=AmplitudeVad, **stack)
 
     async def main():
         stop, port = await start(ctx)
@@ -352,8 +356,10 @@ def test_chunk_tail_silence_is_trimmed_to_the_configured_pause(stack):
 
     device = asyncio.run(main())
     pcm = np.frombuffer(b''.join(device.audio), dtype=np.int16)
-    # two chunks of 0.3 s tone + 0.5 s silence each (within tail_hold_ms): each silence is cut to 0.12 s
-    assert len(pcm) / 24000 < 2 * (0.3 + 0.12) + 0.06
+    # the TTS is told to leave 0.12 s after each sentence; whatever it sends is forwarded whole
+    # (two sentences of 0.3 s tone + 0.5 s silence here), padded to a frame at the end
+    assert stack['tts'].pauses == [0.12, 0.12]
+    assert abs(len(pcm) / 24000 - 2 * 0.8) < 0.07
     assert np.abs(pcm[:7000]).max() > 500
 
 

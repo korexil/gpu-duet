@@ -81,3 +81,22 @@ def test_each_sentence_gets_its_own_state():
     assert isinstance(a, Sentence) and a is not b
     a.process(tone(1.0, 0.3))
     assert b.started is False and b.held == []
+
+def test_a_pause_given_per_sentence_overrides_the_default():
+    import time
+    leveler = Leveler(sentence_pause=0.9)
+    wave = np.concatenate([tone(1.0, 0.1), silence(0.2)])
+
+    def run_with(pause):
+        leveler.last_end = time.monotonic()          # no amplifier lead-in, so only the pause differs
+        stage = leveler.begin('这是一句普通长度的话', pause=pause)
+        out = [stage.process(wave[i:i + CHUNK]) for i in range(0, len(wave), CHUNK)]
+        out.append(stage.finish())
+        return np.concatenate(out)
+
+    default, asked = run_with(None), run_with(0.4)
+    assert abs((len(default) - len(asked)) / SAMPLE_RATE - 0.5) < 0.02
+    # a short interjection keeps the clause pause, which is never longer than the pause asked for
+    leveler.last_end = time.monotonic()
+    short = np.concatenate([leveler.begin('嗯', pause=0.9).process(tone(0.2, 0.1)), leveler.begin('嗯', pause=0.9).finish()])
+    assert len(short) <= int((0.2 + CLAUSE_PAUSE) * SAMPLE_RATE) + 1

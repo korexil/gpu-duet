@@ -490,7 +490,7 @@ index 2b839da..52a0b04 100644
          return false;
      }
 diff --git a/src/pipeline/pipeline_synthesize.cpp b/src/pipeline/pipeline_synthesize.cpp
-index a73b00a..678d701 100644
+index a73b00a..14dede3 100644
 --- a/src/pipeline/pipeline_synthesize.cpp
 +++ b/src/pipeline/pipeline_synthesize.cpp
 @@ -1,6 +1,7 @@
@@ -501,7 +501,7 @@ index a73b00a..678d701 100644
  
  #include <algorithm>
  #include <cstdint>
-@@ -1485,12 +1486,30 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
+@@ -1485,12 +1486,48 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
                                      reference_codes_ptr ? reference_codes_ptr->codes.data() : nullptr,
                                      reference_codes_ptr ? reference_codes_ptr->n_frames : 0,
                                      reference_codes_ptr ? reference_codes_ptr->n_codebooks : 0,
@@ -513,17 +513,35 @@ index a73b00a..678d701 100644
          return result;
      }
 +    // The talker emits end-of-speech while the last frame is still at speaking level, so
-+    // the final syllable has no release and the audio stops at about -20 dB. Repeating the
-+    // last frame a few times lets the causal vocoder render the release and settle into
-+    // silence (measured: 2-4 frames, i.e. 0.16-0.32 s). QWEN3_TTS_TAIL_PAD_FRAMES=0 disables it.
++    // the final syllable has no release and the audio stops at about -20 dB. Feeding a few
++    // frames of codec silence after it lets the causal vocoder render the release and settle
++    // (3 frames = 0.24 s). Repeating the last speech frame instead sustains the last sound,
++    // which is audible as a doubled ending, so the pad is a silence frame: the 12 Hz
++    // tokenizer's codes for near-silence, overridable with QWEN3_TTS_TAIL_PAD_CODES
++    // (comma-separated, one per codebook). QWEN3_TTS_TAIL_PAD_FRAMES=0 disables the pad.
 +    {
 +        const int n_cb = self.transformer_.get_config().n_codebooks;
 +        const int32_t tail_pad_frames = env_int("QWEN3_TTS_TAIL_PAD_FRAMES", 3);
 +        if (tail_pad_frames > 0 && n_cb > 0 && generated_codes.size() >= (size_t) n_cb) {
-+            const std::vector<int32_t> last(generated_codes.end() - n_cb, generated_codes.end());
++            static const int32_t silence_12hz[16] = {462, 1931, 933, 1034, 149, 1506, 1631, 1202,
++                                                     1351, 871, 541, 1162, 1555, 1422, 85, 803};
++            std::vector<int32_t> pad(generated_codes.end() - n_cb, generated_codes.end());
++            if (const char * custom = std::getenv("QWEN3_TTS_TAIL_PAD_CODES"); custom && *custom) {
++                std::vector<int32_t> parsed;
++                const char * cursor = custom;
++                while (*cursor) {
++                    char * end = nullptr;
++                    parsed.push_back((int32_t) std::strtol(cursor, &end, 10));
++                    if (end == cursor) { parsed.clear(); break; }
++                    cursor = (*end == ',') ? end + 1 : end;
++                }
++                if ((int) parsed.size() == n_cb) pad = parsed;
++            } else if (n_cb == 16) {
++                pad.assign(silence_12hz, silence_12hz + 16);
++            }
 +            for (int32_t i = 0; i < tail_pad_frames; ++i) {
-+                generated_codes.insert(generated_codes.end(), last.begin(), last.end());
-+                if (streaming && !stream.push_frame(last.data())) {
++                generated_codes.insert(generated_codes.end(), pad.begin(), pad.end());
++                if (streaming && !stream.push_frame(pad.data())) {
 +                    result.error_msg = stream_error.empty() ? "Streaming vocoder tail pad failed" : stream_error;
 +                    return result;
 +                }

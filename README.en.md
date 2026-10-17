@@ -40,6 +40,8 @@
 
 <sub>RTX 4060 Laptop 8 GB. First audio and gaps: the same long-answer question asked three times per setup and averaged, all setups measured in one sitting; questions sent as text, so first audio excludes VAD and ASR; gaps are estimated by the server against the device's 0.3 s prebuffer; "Before" is the PyTorch TTS + the LLM on the CPU. VRAM: "After" is a measured 7,448 MiB; "Before" is estimated by adding back the 488 + 594 MiB saved by the patches. GB follows Task Manager's convention (1 GB = 1024 MiB). In a controlled experiment that changed only the scheduling (6 runs per group, with a simulated 0.5 s-buffer player), 6/6 runs had gaps without turn-taking and 0/6 with it. Full data: [docs/benchmarks.en.md](docs/benchmarks.en.md).</sub>
 
+v0.1.3 (2026-10-18) removed the server's tail hold: taking turns, the first frame now leaves with the first audio block (1.77–1.96 s in three runs; it used to wait another 0.19 s), the occasional 0.13 s gap at the start is gone (0 in all three), and the same question through the old and the new server gave the same pause and silence statistics and sounded the same in a blind comparison (one question, one matched pair, one listener). See [docs/benchmarks.en.md](docs/benchmarks.en.md#v013-after-removing-the-tail-hold-2026-10-18).
+
 ## How it relates to xiaozhi
 
 xiaozhi is an open-source ESP32 voice assistant in two parts: the [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) firmware on the board, and the [xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server) server on a PC.
