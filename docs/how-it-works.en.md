@@ -19,7 +19,7 @@ The TTS uses [qwen3-tts.cpp](https://github.com/Danmoreng/qwen3-tts.cpp) @ `16bb
 | Keep the text embedding table on the CPU and look it up there | `QWEN3_TTS_TEXT_EMBD_CPU=1` | about 594 MiB less GPU memory |
 | Make that table a read-only memory map (by row range, no prefetch, no copy) | `QWEN3_TTS_TEXT_EMBD_MMAP=1` | about 594 MiB less RSS |
 | Decoder batches on demand | `QWEN3_TTS_LAZY_BATCH_DECODER=1` | — |
-| After the end token, feed 3 frames of codec silence so the vocoder renders the tail (repeating the last frame doubles the ending audibly) | `QWEN3_TTS_TAIL_PAD_FRAMES=3` (0 turns it off) | Sentence endings are no longer cut off (about 0.24 s) (not in prebuilt package v0.1.2; build it yourself) |
+| After the end token, feed 3 frames of codec silence so the vocoder renders the tail (repeating the last frame doubles the ending audibly) | `QWEN3_TTS_TAIL_PAD_FRAMES=3` (0 turns it off) | Sentence endings are no longer cut off (about 0.24 s) (in the prebuilt package from v0.1.3 on) |
 | C ABI bridge library `qwen3_tts_bridge` + streaming callback | CMake `-DQWEN3_TTS_BUILD_C_BRIDGE=ON` | Called directly from Python via ctypes; PCM comes out while synthesis is still running |
 | ABI self-check: struct sizes, each field's offset and type code | — | A mismatch between the bindings and the library version is reported at load time |
 | Exported functions catch C++ exceptions at the C boundary | — | An engine error returns an error message instead of taking down the Python process |

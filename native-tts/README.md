@@ -10,7 +10,7 @@
 | 文本 embedding 表留在 CPU，只在 CPU 上做 get_rows | `QWEN3_TTS_TEXT_EMBD_CPU=1` | GPU −约 594 MiB |
 | 上面的 CPU 表改为只读内存映射（Windows，按行范围映射，不预读、不复制整表） | `QWEN3_TTS_TEXT_EMBD_MMAP=1` | RSS −约 594 MiB |
 | 解码器按需批处理 | `QWEN3_TTS_LAZY_BATCH_DECODER=1` | — |
-| 结束符后再喂 N 帧**静音**的 codec 码（12 Hz 分词器里近似静音的一组码，`QWEN3_TTS_TAIL_PAD_CODES` 可覆盖：逗号分隔、每个码本一个；码本数不是 16 又没覆盖时退回重复最后一帧），让因果声码器渲染出最后一个字的收音（不补时句尾停在约 -20 dB，像被掐断；重复最后一帧会听出尾音叠一下，所以不用） | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（默认 3，`0` 关闭） | 句尾多约 0.24 s 收音（预编译包 v0.1.2 还没有，需自己编译） |
+| 结束符后再喂 N 帧**静音**的 codec 码（12 Hz 分词器里近似静音的一组码，`QWEN3_TTS_TAIL_PAD_CODES` 可覆盖：逗号分隔、每个码本一个；码本数不是 16 又没覆盖时退回重复最后一帧），让因果声码器渲染出最后一个字的收音（不补时句尾停在约 -20 dB，像被掐断；重复最后一帧会听出尾音叠一下，所以不用） | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（默认 3，`0` 关闭） | 句尾多约 0.24 s 收音（v0.1.3 预编译包起包含） |
 
 全部打开时，常驻显存约 3.9～4.0 GB（任务管理器口径；2026-10-14 实测 4,027～4,065 MiB，随句子长短略有变化）。在测试过的种子、文本和参数下，输出 PCM 与关闭这些开关时**逐字节相同**；这只说明测过的配置等价，不保证所有输入。
 `tts-service/server.py` 启动时会默认打开这些开关。布尔开关的取值规则一样：`1`、`true`、`on`、`yes`（不分大小写）算开，其他都算关；`QWEN3_TTS_TAIL_PAD_FRAMES` 是整数，没设、为空或解析不了时用默认值 3；`QWEN3_TTS_TAIL_PAD_CODES` 解析不了（个数不等于码本数）时用内置的静音码。
@@ -23,19 +23,20 @@ ABI 校验分三层：`qwen3_tts_bridge_abi_layout`（结构体大小 + 每个�
 
 从 [Releases](https://github.com/korexil/gpu-duet/releases/latest) 下载 `gpu-duet-tts-win-x64-cuda12-sm75-86-89-120.zip`，解压到任意目录。编进了 RTX 20 / 30 / 40 / 50 系（sm 75 / 86 / 89 / 120），实机只测过 RTX 40 系（sm 89）。
 
-每个 Release 的说明里都写了 zip 的 SHA256，下载后对一下（`Get-FileHash <zip>`）。当前 v0.1.2：`7c13d4ec087a72606b631357d0e214fe85ec94885a4ace7c3eac6e03a4882d93`。v0.1.2 编译于尾音补帧加入之前，不含这一项；其余开关都有，C ABI 与当前补丁一致。包是用 `build.ps1` 从干净的上游克隆加本仓库的补丁编出来的，但这不是可复现构建：自己编出的 DLL 二进制不会和包里的逐字节相同，只能比合成结果（实测同模型、同种子、同文本下 PCM 逐字节相同）。信不过预编译包就自己编，见下一节。
+每个 Release 的说明里都写了 zip 的 SHA256，下载后对一下（`Get-FileHash <zip>`）。当前 v0.1.3：`9be8ee51d9542d92206a12b739ee7fa699be3a2b275c9983ce38cc8201f4ef41`。v0.1.3 含全部开关（包括尾音补帧），C ABI 与 v0.1.2 一致。包是用 `build.ps1` 从干净的上游克隆加本仓库的补丁编出来的，但这不是可复现构建：自己编出的 DLL 二进制不会和包里的逐字节相同，只能比合成结果（实测同模型、同种子、同文本下 PCM 逐字节相同）。信不过预编译包就自己编，见下一节。
 
 ### 版本
 
-三个版本是同一个引擎的预编译包，都基于 qwen3-tts.cpp `16bb5af`、CUDA 12.8、同样的 GPU 架构。**合成算法没变**：同模型、同声音提示、同种子下，三个版本输出的 PCM 逐字节相同。区别只在桥接库的稳定性和兼容性，用最新版即可。
+四个版本是同一个引擎的预编译包，都基于 qwen3-tts.cpp `16bb5af`、CUDA 12.8、同样的 GPU 架构。**合成算法没变**：同模型、同声音提示、同种子下，v0.1.0～v0.1.2 输出的 PCM 逐字节相同；v0.1.3 默认多了尾音补帧（句尾约 0.24 s 收音），`QWEN3_TTS_TAIL_PAD_FRAMES=0` 时关掉。v0.1.3 的包与演示和实测所用的本机构建（同一份补丁）在同模型、同种子、三句测试文本下 PCM 逐字节相同（2026-10-18，RTX 4060 Laptop）。v0.1.0～v0.1.2 之间的区别只在桥接库的稳定性和兼容性；用最新版即可。
 
 | 版本 | 发布 | 相对上一版的改动 | 用新的 `tts-service` 加载时 |
 |---|---|---|---|
-| [v0.1.2](https://github.com/korexil/gpu-duet/releases/tag/v0.1.2)（最新） | 2026-10-12 | 模型、声音提示、参考音的路径按 UTF-8 打开，中文、日文目录名可用；新增字段类型表 `qwen3_tts_bridge_abi_types` | 完整校验 |
+| [v0.1.3](https://github.com/korexil/gpu-duet/releases/tag/v0.1.3)（最新） | 2026-10-18 | 尾音补帧：结束符后补 3 帧静音码，让最后一个字有收音（`QWEN3_TTS_TAIL_PAD_FRAMES`，`QWEN3_TTS_TAIL_PAD_CODES` 可覆盖静音码）；C ABI 不变 | 完整校验 |
+| [v0.1.2](https://github.com/korexil/gpu-duet/releases/tag/v0.1.2) | 2026-10-12 | 模型、声音提示、参考音的路径按 UTF-8 打开，中文、日文目录名可用；新增字段类型表 `qwen3_tts_bridge_abi_types` | 完整校验 |
 | [v0.1.1](https://github.com/korexil/gpu-duet/releases/tag/v0.1.1) | 2026-10-12 | 新增字段布局表 `qwen3_tts_bridge_abi_layout`，加载时逐字段核对；导出函数在 C 边界捕获 C++ 异常，出错不再带崩 Python 进程；非 ASCII 路径下只读映射自动退回读入内存；开关统一按 `1/true/on/yes` 解析 | 能用，警告「类型表未校验」 |
 | [v0.1.0](https://github.com/korexil/gpu-duet/releases/tag/v0.1.0) | 2026-10-10 | 第一版：QKV 去重、文本表放 CPU + 只读映射、解码器按需批处理、C 桥接库（只校验结构体大小） | 能用，警告「字段布局未校验」 |
 
-当前补丁比 v0.1.2 多一项尾音补帧（`QWEN3_TTS_TAIL_PAD_FRAMES`，补静音码），C ABI 没变；要用它需要自己编译，或等 v0.1.3 预编译包。
+v0.1.3 的预编译包就是用当前补丁编的，两者一致。
 
 ### 运行库
 

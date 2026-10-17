@@ -19,7 +19,7 @@ TTS 用 [qwen3-tts.cpp](https://github.com/Danmoreng/qwen3-tts.cpp) @ `16bb5af` 
 | 文本 embedding 表留在 CPU，只在 CPU 上查表 | `QWEN3_TTS_TEXT_EMBD_CPU=1` | GPU −约 594 MiB |
 | 上面这张表改为只读内存映射（按行范围，不预读、不复制） | `QWEN3_TTS_TEXT_EMBD_MMAP=1` | RSS −约 594 MiB |
 | 解码器按需批处理 | `QWEN3_TTS_LAZY_BATCH_DECODER=1` | — |
-| 结束符后再喂 3 帧静音的 codec 码，让声码器渲染出尾音（重复最后一帧会听出尾音叠一下） | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（0 关闭） | 句尾不再被掐断（约 0.24 s）（预编译包 v0.1.2 不含，需自己编译） |
+| 结束符后再喂 3 帧静音的 codec 码，让声码器渲染出尾音（重复最后一帧会听出尾音叠一下） | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（0 关闭） | 句尾不再被掐断（约 0.24 s）（v0.1.3 预编译包起包含） |
 | C ABI 桥接库 `qwen3_tts_bridge` + 流式回调 | CMake `-DQWEN3_TTS_BUILD_C_BRIDGE=ON` | Python ctypes 直接调用，边合成边出 PCM |
 | ABI 自检：结构体大小、每个字段的偏移和类型码 | — | 绑定和库版本不一致时加载即报错 |
 | 导出函数在 C 边界捕获 C++ 异常 | — | 引擎出错返回错误信息，不带崩 Python 进程 |
