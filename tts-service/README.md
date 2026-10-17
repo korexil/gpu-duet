@@ -30,10 +30,10 @@ DLL 会自动从 `--library` 所在目录（及其 `bin\`）和 `nvidia-cuda-run
 | 接口 | 说明 |
 |---|---|
 | `GET /health` | `{"ready", "busy", "started", "served", "backend", "active_backend", "sentence_pause"}`，例如 `{"ready": true, "busy": false, "started": 12, "served": 12, "sentence_pause": 0.9, ...}`；`started` / `served` 单调递增，`busy` 和这两个计数供 LLM provider 轮流使用 GPU |
-| `POST /stream` | `{"text": "..."}`（1～300 字，请求体 1～8192 字节，否则 400）→ chunked 原始 PCM（s16le、24 kHz、单声道，`audio/pcm`），一边合成一边返回 |
+| `POST /stream` | `{"text": "...", "pause": 0.4}`（`text` 1～300 字，请求体 1～8192 字节；`pause` 可选，0～3 秒，这句后面留多长静音，不给用 `--sentence-pause`；≤ `--clause-chars` 字的短句取 `min(0.5, pause)`）→ chunked 原始 PCM（s16le、24 kHz、单声道，`audio/pcm`），一边合成一边返回 |
 | `POST /synthesize` | 同上，但返回完整 WAV，方便试听 |
 | 并发 | 一次只合成一句；第二个请求排队，`--queue-timeout`（默认 30 s）后回 503；排队中或合成中客户端断开就放弃这句 |
-| 错误 | 参数不对 400；合成失败且还没发出数据时 500 |
+| 错误 | 参数不对（含 `pause` 不是 0～3 的数）400；合成失败且还没发出数据时 500 |
 
 服务只监听 `127.0.0.1`，启动时先合成一句预热。每句的音频 token 预算按长度给（每字 8 个，最少 128、最多 1024）；真撞到预算说明句尾被截掉了，stderr 会打一行 warning，`--log` 的记录里 `truncated` 为 true。
 

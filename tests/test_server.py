@@ -89,3 +89,26 @@ def test_client_that_left_while_queued_is_never_synthesized(service):
     time.sleep(0.3)
     assert tts.calls == ['first']
     assert health(base)['started'] == 1 and not health(base)['busy']
+
+
+def post_json(base, path, body, timeout=10):
+    import urllib.error
+    req = urllib.request.Request(f'{base}{path}', data=json.dumps(body).encode(),
+                                 headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as error:
+        return error.code, b''
+
+
+def test_pause_in_the_request_sets_the_trailing_silence(service):
+    _, base, _ = service
+    post_json(base, '/synthesize', {'text': '今日はいい天気ですね。'})   # warm-up: the first sentence after
+    status, short = post_json(base, '/synthesize', {'text': '今日はいい天気ですね。', 'pause': 0.0})   # >1.5 s idle gets a 0.3 s lead-in
+    assert status == 200
+    status, long = post_json(base, '/synthesize', {'text': '今日はいい天気ですね。', 'pause': 1.0})
+    assert status == 200
+    assert abs((len(long) - len(short)) / 2 / 24000 - 1.0) < 0.05     # one more second of silence
+    assert post_json(base, '/stream', {'text': 'x', 'pause': 5})[0] == 400
+    assert post_json(base, '/stream', {'text': 'x', 'pause': True})[0] == 400

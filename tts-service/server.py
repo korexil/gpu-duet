@@ -2,8 +2,9 @@
 
 GET  /health      {"ready": true, "busy": bool, "started": n, "served": n, ...}
                   busy and the counters drive the LLM turn-taking
-POST /stream      {"text": "..."} -> chunked raw PCM, s16le 24 kHz mono (audio/pcm)
-POST /synthesize  {"text": "..."} -> audio/wav
+POST /stream      {"text": "...", "pause": 0.4} -> chunked raw PCM, s16le 24 kHz mono (audio/pcm)
+POST /synthesize  {"text": "...", "pause": 0.4} -> audio/wav
+                  pause (optional, seconds): silence to leave after this sentence instead of --sentence-pause
 
 One sentence is synthesized at a time. A second request queues for up to
 --queue-timeout seconds and then gets 503; it is never run concurrently on the GPU.
@@ -32,8 +33,8 @@ import soundfile as sf
 # byte-identical PCM on the tested configurations.
 ENGINE_ENV = dict(QWEN3_TTS_LAZY_BATCH_DECODER='1', QWEN3_TTS_LOW_MEM='0', QWEN3_TTS_QKV_DEDUP='1',
                   QWEN3_TTS_TEXT_EMBD_CPU='1', QWEN3_TTS_TEXT_EMBD_MMAP='1',
-                  # the talker stops while the last syllable is still sounding; the engine repeats the
-                  # last frame this many times so the vocoder renders the release (0.24 s)
+                  # the talker stops while the last syllable is still sounding; the engine feeds this
+                  # many frames of codec silence after it so the vocoder renders the release (0.24 s)
                   QWEN3_TTS_TAIL_PAD_FRAMES='3')
 
 
@@ -74,9 +75,12 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1', queue_timeo
                 size = int(self.headers.get('Content-Length', '0'))
                 if not 0 < size <= 8192:
                     raise ValueError('request body must be 1-8192 bytes')
-                text = json.loads(self.rfile.read(size)).get('text')
+                body = json.loads(self.rfile.read(size))
+                text, pause = body.get('text'), body.get('pause')
                 if not isinstance(text, str) or not 0 < len(text.strip()) <= 300:
                     raise ValueError('text must be 1-300 characters')
+                if pause is not None and not (isinstance(pause, (int, float)) and not isinstance(pause, bool) and 0 <= pause <= 3):
+                    raise ValueError('pause must be 0-3 seconds')
             except (ValueError, TypeError, AttributeError, TimeoutError):
                 self.close_connection = True
                 self.send_error(400)
@@ -121,7 +125,7 @@ def make_server(tts, leveler, port, log_path=None, host='127.0.0.1', queue_timeo
                 self.wfile.flush()
 
             try:
-                stage = leveler.begin(text)
+                stage = leveler.begin(text, pause)
 
                 def leveled(wave):
                     out = stage.process(wave)

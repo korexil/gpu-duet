@@ -19,7 +19,7 @@ TTS 用 [qwen3-tts.cpp](https://github.com/Danmoreng/qwen3-tts.cpp) @ `16bb5af` 
 | 文本 embedding 表留在 CPU，只在 CPU 上查表 | `QWEN3_TTS_TEXT_EMBD_CPU=1` | GPU −约 594 MiB |
 | 上面这张表改为只读内存映射（按行范围，不预读、不复制） | `QWEN3_TTS_TEXT_EMBD_MMAP=1` | RSS −约 594 MiB |
 | 解码器按需批处理 | `QWEN3_TTS_LAZY_BATCH_DECODER=1` | — |
-| 结束符后把最后一帧 code 再喂 3 帧，让声码器渲染出尾音 | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（0 关闭） | 句尾不再被掐断（约 0.24 s）（预编译包 v0.1.2 不含，需自己编译） |
+| 结束符后再喂 3 帧静音的 codec 码，让声码器渲染出尾音（重复最后一帧会听出尾音叠一下） | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（0 关闭） | 句尾不再被掐断（约 0.24 s）（预编译包 v0.1.2 不含，需自己编译） |
 | C ABI 桥接库 `qwen3_tts_bridge` + 流式回调 | CMake `-DQWEN3_TTS_BUILD_C_BRIDGE=ON` | Python ctypes 直接调用，边合成边出 PCM |
 | ABI 自检：结构体大小、每个字段的偏移和类型码 | — | 绑定和库版本不一致时加载即报错 |
 | 导出函数在 C 边界捕获 C++ 异常 | — | 引擎出错返回错误信息，不带崩 Python 进程 |
@@ -85,6 +85,6 @@ LLM 同时解码时，TTS 第一句实时率升到 1.1～1.6，比播放慢（�
 | 句尾呼吸声 | 模型生成的尾音 | 裁掉最后一段安静、无周期的尾巴（最多扣住约 0.8 s） | `tts-service/tail_gate.py` |
 | 句尾被掐断 | 模型在最后一个字还在发声时停下 | 引擎补 3 帧（见第 1 节） | 补丁 |
 | 一句话里前响后轻 | 增益只按开头定 | 慢速 AGC：压 60 dB/s、升 6 dB/s，目标 -20 dBFS，最多 +8 / -10 dB | `standalone/agc.py`（仅 standalone） |
-| 段间停顿太长 | 每段结尾都补了 0.9 s | 发帧前把段尾静音修剪到 `chunk_pause_ms`（400 ms） | `standalone/session.py`（仅 standalone） |
+| 段间停顿太长 | 每段结尾都补了 0.9 s | 每句按 `chunk_pause_ms`（400 ms）向 tts-service 要停顿（请求里的 `pause`）；v0.1.3 以前是服务端扣住最后 1.2 s 再修剪，首帧因此晚 0.19 s、偶尔开头断 0.13 s | `standalone/session.py`（仅 standalone） |
 
 句间响度只按每句开头 0.6 s 的 RMS 定增益（实测句间响度差 4.6 → 3.7 dB），不是响度标准。每一条的来由见 [踩坑 #14～#17](pitfalls.md) 和 [standalone-tuning.md](standalone-tuning.md)。

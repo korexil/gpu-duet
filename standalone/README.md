@@ -45,7 +45,7 @@ python standalone\loopback.py --wav question.wav --out reply.wav      # 真走 O
 
 1. 板子唤醒后发 `listen detect`，文字匹配 `wake.words` 里的唤醒词就先应一声（`wake.ack`，启动时合成一次并缓存，不用现合成）。
 2. 之后板子常开收音。VAD 判到开口就开始攒音频（前面补 `preroll_ms` 避免掉字），停顿 `end_silence_ms` 算说完，整句先过 GTCRN 降噪（`asr.denoise`，默认开；模型缺失时跳过并警告），再送 SenseVoice。
-3. 识别出的文字发回板子显示（`stt`），LLM 生成回答 → 第一段过 `splitter.first_min_chars`（默认 12 字）遇到句末就切出，之后每段攒够 `splitter.min_chars`（默认 30 字，一段一两句）才交给 `tts-service` 合成一段 → 边合成边切成 Opus 每 60 ms 一帧发回，段尾 tts-service 补的静音修剪到 `chunk_pause_ms`。LLM 和 TTS 严格串行，GPU 不会被两边同时抢。段切得太碎语调接不上（每段是独立的一次合成），切得太长（70 字以上）1.7B 的模型会在中途变成一字一句地念，默认值是这两头之间的折中。
+3. 识别出的文字发回板子显示（`stt`），LLM 生成回答 → 第一段过 `splitter.first_min_chars`（默认 12 字）遇到句末就切出，之后每段攒够 `splitter.min_chars`（默认 30 字，一段一两句）才交给 `tts-service` 合成一段 → 边合成边切成 Opus 每 60 ms 一帧发回；每句请求 tts-service 时带上 `pause`=`chunk_pause_ms`，段尾静音由它直接补到这个长度，收到的音频不扣留。LLM 和 TTS 严格串行，GPU 不会被两边同时抢。段切得太碎语调接不上（每段是独立的一次合成），切得太长（70 字以上）1.7B 的模型会在中途变成一字一句地念，默认值是这两头之间的折中。
 4. 说话期间和之后 `guard_ms` 内，上行音频全丢。板子按 `abort` 或再叫唤醒词可以打断。
 5. `idle_close_s` 默认 0：连接一直开着、一直在听，不会断开。设成秒数（如 120）时，没人说话这么久就断开，板子回到待机等唤醒词。
 
@@ -86,7 +86,8 @@ python standalone\loopback.py --wav question.wav --out reply.wav      # 真走 O
 | `voice.end_silence_ms` / `min_voice_ms` / `preroll_ms` / `max_utterance_s` | 700 / 250 / 600 / 20 | 判停、最短语音、句首前摇、单句上限 |
 | `voice.guard_ms` | 500 | 说完后继续丢弃麦克风帧的时长（这段帧进前摇缓冲） |
 | `voice.barge_in` / `barge_in_ms` | `false` / 600 | 固件有回声消除时才开：说话中听到连续人声就停 |
-| `voice.chunk_pause_ms` / `tail_hold_ms` | 400 / 1200 | 段尾静音修剪到的长度 / 为修剪而扣住的尾部 |
+| `voice.chunk_pause_ms` | 400 | 每段后面留多长停顿；按这个值向 tts-service 要（请求里的 `pause`），收到的音频不扣留、原样转发 |
+| `tts.read_timeout_s` | 10 | 一句话等这么久没收到任何音频就当 TTS 卡住，结束这次回答 |
 | `voice.agc.*` | 见 [how-it-works.md](../docs/how-it-works.md#3-逐句整形统一响度停顿和峰值) | 下行慢速 AGC（压 60 dB/s、升 6 dB/s，目标 -20 dBFS，最多 +8 / -10 dB），`enabled: false` 关闭 |
 | `wake.words` / `wake.ack` | `你好小智` 等 / `嗯？` | 唤醒词与应答 |
 | `wake.device_text` | `chat` | 设备以文字发来的非唤醒词（`listen detect`）：`chat` 当作提问，`ignore` 丢掉 |

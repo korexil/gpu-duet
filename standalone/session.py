@@ -85,8 +85,7 @@ class Session:
         self.barge_in = bool(voice.get('barge_in'))
         self.barge_frames_needed = max(1, voice.get('barge_in_ms', 600) // self.FRAME_MS)
         self.idle_close_s = self.cfg['idle_close_s']
-        self.chunk_pause = int(voice.get('chunk_pause_ms', 400)) * self.out_rate // 1000      # samples kept after a chunk
-        self.hold_bytes = int(voice.get('tail_hold_ms', 1200)) * self.out_rate // 1000 * 2   # bytes withheld to trim
+        self.pause_s = int(voice.get('chunk_pause_ms', 400)) / 1000   # silence the TTS is asked to leave after a segment
         agc = dict(voice.get('agc') or {})
         enabled = agc.pop('enabled', True)
         self.agc = Agc(self.out_rate, **agc) if enabled else None
@@ -100,6 +99,7 @@ class Session:
         self.speaking, self.guard_until = False, 0.0
         self.last_voice_at = time.monotonic()
         self.answer = None            # asyncio task of the current reply
+        self.gen = 0                  # counts answers; every event of an answer carries its number
         self.cancel = threading.Event()
         self.listen_mode = None
         self.closed = False
@@ -118,9 +118,9 @@ class Session:
             msg['text'] = text
         await self.send(msg)
         if state == 'sentence_start':
-            self.ctx.bus.publish({'type': 'sentence', 'text': text})
+            self.ctx.bus.publish({'type': 'sentence', 'text': text, 'gen': self.gen})
         elif state == 'stop':
-            self.ctx.bus.publish({'type': 'stop'})
+            self.ctx.bus.publish({'type': 'stop', 'gen': self.gen})
 
     async def run(self):
         self.log('device %s connected from %s', self.device_id, self.ws.remote_address)
@@ -288,9 +288,10 @@ class Session:
     # ---- reply ----------------------------------------------------------------------------
     async def chat(self, text):
         await self._stop_answer()
+        self.gen += 1
         self.dialogue.user(text)
         await self.send({'type': 'stt', 'text': text})
-        self.ctx.bus.publish({'type': 'question', 'text': text})
+        self.ctx.bus.publish({'type': 'question', 'text': text, 'gen': self.gen})
         self.answer = asyncio.create_task(self._answer())
 
     async def _stop_answer(self):
@@ -307,10 +308,11 @@ class Session:
         cancel = self.cancel
         queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
-        spoken, pacer, tail, held, t0 = [], Pacer(self.FRAME_MS / 1000), b'', b'', time.monotonic()
+        gen = self.gen
+        spoken, pacer, tail, t0 = [], Pacer(self.FRAME_MS / 1000), b'', time.monotonic()
         if self.agc is not None:
             self.agc.reset()
-        worker = threading.Thread(target=self._produce, args=(self.dialogue.render(), queue, cancel, loop),
+        worker = threading.Thread(target=self._produce, args=(self.dialogue.render(), queue, cancel, loop, gen),
                                   daemon=True, name=f'answer-{self.sid}')
         await self.send_tts('start')
         worker.start()
@@ -319,37 +321,29 @@ class Session:
             while True:
                 kind, payload = await queue.get()
                 if kind == 'sentence':
-                    self.ctx.bus.publish({'type': 'tts_start'})      # trace: TTS request for this sentence
                     spoken.append(payload)
                     pending_text = payload          # shown when its audio starts, not when the text is ready
                 elif kind == 'pcm':
-                    self.ctx.bus.publish({'type': 'pcm', 'ms': round(len(payload) / 2 / self.out_rate * 1000, 1)})
                     if first_audio is None:
                         first_audio = time.monotonic() - t0
                     if pending_text is not None:
                         await self.send_tts('sentence_start', pending_text)
                         pending_text = None
-                    # keep the last tail_hold_ms back: the chunk's trailing silence is trimmed once it ends
-                    held += payload
-                    if len(held) > self.hold_bytes:
-                        tail = await self._send_pcm(tail + held[:-self.hold_bytes], pacer)
-                        held = held[-self.hold_bytes:]
+                    # the TTS was asked for exactly chunk_pause_ms of silence after the sentence, so
+                    # nothing is held back: every block goes to the pacer as it arrives
+                    tail = await self._send_pcm(tail + payload, pacer, gen)
                 elif kind == 'chunk_end':
-                    self.ctx.bus.publish({'type': 'chunk_end'})
                     if pending_text is not None:    # a chunk that produced no audio still shows its text
                         await self.send_tts('sentence_start', pending_text)
                         pending_text = None
-                    tail = await self._send_pcm(tail + self._trim_tail(held), pacer)
-                    held = b''
                 elif kind == 'error':
                     self.log('reply failed: %s', payload, level=logging.ERROR)
                     if not spoken:
                         await self.send_tts('sentence_start', payload)
                 elif kind == 'end':
                     break
-            tail += held
             if tail:
-                await self._send_pcm(tail + bytes((-len(tail)) % (self.out_frame * 2)), pacer)
+                await self._send_pcm(tail + bytes((-len(tail)) % (self.out_frame * 2)), pacer, gen)
             await pacer.drain()
             self.log('spoke %d sentence(s), first audio %s, total %.1fs', len(spoken),
                      'none' if first_audio is None else f'{first_audio:.2f}s', time.monotonic() - t0)
@@ -369,19 +363,12 @@ class Session:
                 except Exception:
                     pass
 
-    def _trim_tail(self, data, floor=300):
-        """Cut the silence tts-service pads after a chunk down to chunk_pause_ms, so chunks join naturally."""
-        x = np.frombuffer(data[:len(data) // 2 * 2], dtype=np.int16)
-        loud = np.flatnonzero(np.abs(x) > floor)
-        if not len(loud):
-            return data[:self.chunk_pause * 2]
-        return x[:min(len(x), int(loud[-1]) + 1 + self.chunk_pause)].tobytes()
-
-    async def _send_pcm(self, data, pacer):
+    async def _send_pcm(self, data, pacer, gen=None):
         """Cut PCM into frames, encode and send on the pacer's schedule; return the leftover bytes."""
         size = self.out_frame * 2
-        if len(data) >= size:   # trace: frames handed to the pacer (after the tail hold), before pacing
-            self.ctx.bus.publish({'type': 'release', 'frames': len(data) // size})
+        gen = self.gen if gen is None else gen
+        if len(data) >= size:   # trace: frames handed to the pacer, before pacing
+            self.ctx.bus.publish({'type': 'release', 'frames': len(data) // size, 'gen': gen})
         while len(data) >= size:
             frame, data = data[:size], data[size:]
             if self.agc is not None:
@@ -389,10 +376,10 @@ class Session:
             gap = await pacer.slot()
             await self.ws.send(self.codec.encode(frame, self.out_frame))
             self.ctx.bus.publish({'type': 'frame', 'peak': int(np.abs(np.frombuffer(frame, dtype=np.int16)).max()),
-                                  'gap': round(gap, 3)})
+                                  'gap': round(gap, 3), 'gen': gen})
         return data
 
-    def _produce(self, dialogue, queue, cancel, loop):
+    def _produce(self, dialogue, queue, cancel, loop, gen):
         """Worker thread: LLM pieces -> sentences -> TTS PCM, all pushed to the asyncio queue.
 
         Each sentence is synthesized to completion before the LLM gets the next turn, so the
@@ -406,15 +393,20 @@ class Session:
         splitter = SentenceSplitter(**self.cfg['splitter'])
 
         def say(sentence):
+            # trace events are published here, when things happen, not when the event loop (paced by
+            # the frames it sends) gets around to the queue: tts_start = request sent, pcm = block arrived
             put('sentence', sentence)
-            stream = self.ctx.tts.stream(sentence)
+            self.ctx.bus.publish({'type': 'tts_start', 'gen': gen})
+            stream = self.ctx.tts.stream(sentence, pause=self.pause_s)
             try:
                 for chunk in stream:
                     if cancel.is_set():
                         break
+                    self.ctx.bus.publish({'type': 'pcm', 'ms': round(len(chunk) / 2 / self.out_rate * 1000, 1), 'gen': gen})
                     put('pcm', chunk)
             finally:
                 stream.close()
+            self.ctx.bus.publish({'type': 'chunk_end', 'gen': gen})
             put('chunk_end')
 
         def sentences():
@@ -429,7 +421,7 @@ class Session:
                         yield sentence
             finally:
                 reply.close()
-            self.ctx.bus.publish({'type': 'llm_done'})
+            self.ctx.bus.publish({'type': 'llm_done', 'gen': gen})
             if rest := splitter.flush():
                 yield rest
 

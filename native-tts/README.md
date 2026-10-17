@@ -10,10 +10,10 @@
 | 文本 embedding 表留在 CPU，只在 CPU 上做 get_rows | `QWEN3_TTS_TEXT_EMBD_CPU=1` | GPU −约 594 MiB |
 | 上面的 CPU 表改为只读内存映射（Windows，按行范围映射，不预读、不复制整表） | `QWEN3_TTS_TEXT_EMBD_MMAP=1` | RSS −约 594 MiB |
 | 解码器按需批处理 | `QWEN3_TTS_LAZY_BATCH_DECODER=1` | — |
-| 结束符后把最后一帧 code 再喂 N 帧，让因果声码器渲染出最后一个字的收音（不补时句尾停在约 -20 dB，像被掐断） | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（默认 3，`0` 关闭） | 句尾多约 0.24 s 收音（预编译包 v0.1.2 还没有，需自己编译） |
+| 结束符后再喂 N 帧**静音**的 codec 码（12 Hz 分词器里近似静音的一组码，`QWEN3_TTS_TAIL_PAD_CODES` 可覆盖：逗号分隔、每个码本一个；码本数不是 16 又没覆盖时退回重复最后一帧），让因果声码器渲染出最后一个字的收音（不补时句尾停在约 -20 dB，像被掐断；重复最后一帧会听出尾音叠一下，所以不用） | `QWEN3_TTS_TAIL_PAD_FRAMES=3`（默认 3，`0` 关闭） | 句尾多约 0.24 s 收音（预编译包 v0.1.2 还没有，需自己编译） |
 
 全部打开时，常驻显存约 3.9～4.0 GB（任务管理器口径；2026-10-14 实测 4,027～4,065 MiB，随句子长短略有变化）。在测试过的种子、文本和参数下，输出 PCM 与关闭这些开关时**逐字节相同**；这只说明测过的配置等价，不保证所有输入。
-`tts-service/server.py` 启动时会默认打开这些开关。布尔开关的取值规则一样：`1`、`true`、`on`、`yes`（不分大小写）算开，其他都算关；`QWEN3_TTS_TAIL_PAD_FRAMES` 是整数，没设、为空或解析不了时用默认值 3。
+`tts-service/server.py` 启动时会默认打开这些开关。布尔开关的取值规则一样：`1`、`true`、`on`、`yes`（不分大小写）算开，其他都算关；`QWEN3_TTS_TAIL_PAD_FRAMES` 是整数，没设、为空或解析不了时用默认值 3；`QWEN3_TTS_TAIL_PAD_CODES` 解析不了（个数不等于码本数）时用内置的静音码。
 
 模型、声音提示和参考音的路径一律按 UTF-8 处理：Windows 上先转成宽字符再用 `_wfopen` / `CreateFileW` / `std::filesystem` 打开（`src/common/utf8_path.h`）。上游原来用 ANSI `fopen`，日文、中文目录名会打开不存在的文件；现在含非 ASCII 的路径和只读映射都能正常用。
 
@@ -35,7 +35,7 @@ ABI 校验分三层：`qwen3_tts_bridge_abi_layout`（结构体大小 + 每个�
 | [v0.1.1](https://github.com/korexil/gpu-duet/releases/tag/v0.1.1) | 2026-10-12 | 新增字段布局表 `qwen3_tts_bridge_abi_layout`，加载时逐字段核对；导出函数在 C 边界捕获 C++ 异常，出错不再带崩 Python 进程；非 ASCII 路径下只读映射自动退回读入内存；开关统一按 `1/true/on/yes` 解析 | 能用，警告「类型表未校验」 |
 | [v0.1.0](https://github.com/korexil/gpu-duet/releases/tag/v0.1.0) | 2026-10-10 | 第一版：QKV 去重、文本表放 CPU + 只读映射、解码器按需批处理、C 桥接库（只校验结构体大小） | 能用，警告「字段布局未校验」 |
 
-当前补丁比 v0.1.2 多一项尾音补帧（`QWEN3_TTS_TAIL_PAD_FRAMES`），C ABI 没变；要用它需要自己编译，或等下一个预编译包。
+当前补丁比 v0.1.2 多一项尾音补帧（`QWEN3_TTS_TAIL_PAD_FRAMES`，补静音码），C ABI 没变；要用它需要自己编译，或等 v0.1.3 预编译包。
 
 ### 运行库
 

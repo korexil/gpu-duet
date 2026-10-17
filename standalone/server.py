@@ -47,7 +47,7 @@ DEFAULTS = {
     'llm': {'base_url': 'http://127.0.0.1:18080', 'max_tokens': 1500, 'temperature': 0.8, 'top_p': 0.95,
             'top_k': 64, 'chunk_tokens': 16, 'turn_tokens': 48, 'handoff_wait': 0.4, 'turn_taking': False,
             'question_rest_note': ''},
-    'tts': {'base_url': 'http://127.0.0.1:18766', 'sample_rate': 24000},
+    'tts': {'base_url': 'http://127.0.0.1:18766', 'sample_rate': 24000, 'read_timeout_s': 10},
     'asr': {'model_dir': 'models/sense-voice', 'vad_model': 'models/silero_vad.onnx', 'language': 'zh',
             'threads': 2, 'vad_threshold': 0.5, 'vad_threshold_low': 0.2,
             'denoise_model': 'models/gtcrn_simple.onnx', 'denoise': True},
@@ -57,7 +57,7 @@ DEFAULTS = {
     'splitter': {'min_chars': 30, 'max_chars': 70, 'first_min_chars': 12, 'first_cut_chars': 0},
     'wake': {'words': ['你好小智', '小智小智', '嘿你好'], 'ack': '嗯？', 'device_text': 'chat'},
     'voice': {'end_silence_ms': 700, 'min_voice_ms': 250, 'preroll_ms': 600, 'max_utterance_s': 20,
-              'guard_ms': 500, 'barge_in': False, 'barge_in_ms': 600, 'chunk_pause_ms': 400, 'tail_hold_ms': 1200,
+              'guard_ms': 500, 'barge_in': False, 'barge_in_ms': 600, 'chunk_pause_ms': 400,
               'agc': {'enabled': True, 'target_db': -20.0, 'attack_db_s': 60.0, 'release_db_s': 6.0, 'max_boost_db': 8.0, 'max_cut_db': 10.0}},
     'idle_close_s': 0,            # 0 = stay connected and keep listening; >0 = close after that many silent seconds
     'ws_ping_interval': 20,
@@ -130,7 +130,7 @@ class Context:
             log.info('denoiser %s loaded', Path(asr_cfg['denoise_model']).name)
         elif asr_cfg.get('denoise'):
             log.warning('denoise model %s missing (run setup_models.py); ASR gets the raw microphone', asr_cfg['denoise_model'])
-        tts = TtsClient(cfg['tts']['base_url'], out_rate)
+        tts = TtsClient(cfg['tts']['base_url'], out_rate, read_timeout=float(cfg['tts'].get('read_timeout_s', 10)))
         brain = Brain(cfg['llm'], tts_health_url=cfg['tts']['base_url'].rstrip('/') + '/health')
         ctx = cls(cfg, lambda: OpusCodec(Session.IN_RATE, out_rate, lib), vad_factory, asr, brain, tts, denoiser=denoiser)
         ctx.wake_ack = ctx.prepare_wake_ack(lib)
@@ -147,7 +147,8 @@ class Context:
             log.warning('TTS at %s not reachable, wake acknowledgement disabled', self.tts.base_url)
             return [], ''
         try:
-            pcm = self.tts.synthesize(text)
+            # the first synthesis after a cold start can take longer than an answer's read timeout
+            pcm = self.tts.synthesize(text, pause=int(self.cfg['voice'].get('chunk_pause_ms', 400)) / 1000, timeout=60.0)
         except Exception as error:
             log.warning('wake acknowledgement synthesis failed: %s', error)
             return [], ''
